@@ -12,8 +12,8 @@ yeni sürümleri OpenAI uyumlu bir LLM ile Türkçe özetler (TL;DR, öne çıka
 ## Ayarlar (env)
 | Değişken | Nerede | Varsayılan |
 |---|---|---|
-| `LLM_BASE_URL`, `LLM_MODEL` | ConfigMap | — (yoksa sadece takip, özet yok) |
-| `LLM_API_KEY`, `GITHUB_TOKEN` | Secret | — |
+| `LLM_BASE_URL`, `LLM_MODEL` | ConfigMap | — (yoksa sadece takip, özet yok); manifestte DeepSeek (`https://api.deepseek.com`, `deepseek-flash`) |
+| `LLM_API_KEY`, `GITHUB_TOKEN` | Secret (`oc create secret`) | — |
 | `RETENTION_PER_PRODUCT` | ConfigMap | 10 (ürün başına saklanan sürüm, en az 3) |
 | `LLM_CONCURRENCY` | ConfigMap | 4 (paralel özet isteği) |
 | `CHECK_CRON` | ConfigMap | `0 6 * * *` (her gün 06:00) |
@@ -26,23 +26,25 @@ yeni sürümleri OpenAI uyumlu bir LLM ile Türkçe özetler (TL;DR, öne çıka
 Kurum içi CA için `SSL_CERT_FILE`, proxy için `HTTPS_PROXY` / `NO_PROXY` env'leri yeterli.
 
 ## OpenShift'e deploy
+İmaj Docker Hub'da hazır (`docker.io/mustafa12/release-summarizer`, linux/amd64, public); cluster'da build gerekmez.
 
-**A) Cluster içinde build (önerilen)**
 ```bash
 oc project mlops
-oc apply -f openshift/build.yaml
-oc start-build release-summarizer --from-dir=. --follow
-oc apply -f openshift/deploy.yaml     # önce ConfigMap/Secret değerlerini düzenleyin
+oc create secret generic release-summarizer --from-literal=LLM_API_KEY=<key>   # opsiyonel: --from-literal=GITHUB_TOKEN=<token>
+oc apply -f openshift/deploy.yaml
 oc get route release-summarizer
 ```
-Güncelleme: `oc start-build release-summarizer --from-dir=. --follow` (deployment otomatik yenilenir).
 
-**B) Harici registry (Quay/Nexus/Harbor)**
+- **Ayar değiştirmek:** `openshift/deploy.yaml` içindeki ConfigMap'i düzenle → `oc apply -f openshift/deploy.yaml` → `oc rollout restart deploy/release-summarizer`
+- **Key değiştirmek:** `oc create secret generic release-summarizer --from-literal=LLM_API_KEY=<yeni> --dry-run=client -o yaml | oc apply -f -` → `oc rollout restart deploy/release-summarizer`
+- **Yeni imaj:** aynı tag yeniden push'lanırsa `oc rollout restart deploy/release-summarizer` yeter (`imagePullPolicy: Always`). Yeni versiyon için `image:` satırını güncelle.
+- **Kaldırmak:** `oc delete -f openshift/deploy.yaml && oc delete secret release-summarizer` (PVC de silinir, veriler gider).
+
+### İmajı yeniden üretmek
 ```bash
-podman build --platform linux/amd64 -t registry.example/mlops/release-summarizer:0.0.1 .
-podman push registry.example/mlops/release-summarizer:0.0.1
+docker build --platform linux/amd64 -t mustafa12/release-summarizer:0.0.1 -t mustafa12/release-summarizer:latest .
+docker push mustafa12/release-summarizer:0.0.1 && docker push mustafa12/release-summarizer:latest
 ```
-`openshift/deploy.yaml` içinde trigger annotation'ını silip `image:` alanına bu adresi yazın, sonra `oc apply`.
 
 ## Lokal
 ```bash

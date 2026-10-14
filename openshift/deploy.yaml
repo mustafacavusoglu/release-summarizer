@@ -1,24 +1,18 @@
-# oc apply -f openshift/deploy.yaml
-# Değer değiştirmek: oc edit configmap/release-summarizer && oc rollout restart deploy/release-summarizer
+# Kurulum (README "OpenShift'e deploy"):
+#   oc create secret generic release-summarizer --from-literal=LLM_API_KEY=<key> [--from-literal=GITHUB_TOKEN=<token>]
+#   oc apply -f openshift/deploy.yaml
+# Ayar değiştirmek: bu dosyayı düzenle, oc apply, ardından oc rollout restart deploy/release-summarizer
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: release-summarizer
 data:
-  LLM_BASE_URL: "http://litellm:4000/v1"   # OpenAI uyumlu endpoint (/chat/completions'tan önceki kısım)
-  LLM_MODEL: "gpt-4o-mini"
+  LLM_BASE_URL: "https://api.deepseek.com"  # OpenAI uyumlu endpoint; kurum içi ör. http://litellm:4000/v1
+  LLM_MODEL: "deepseek-flash"                # DeepSeek-V4.1-Flash
   CHECK_CRON: "0 6 * * *"                  # her gün 06:00
   CHECK_TIMEZONE: "Europe/Istanbul"         # GMT+3
   RETENTION_PER_PRODUCT: "10"               # ürün başına en fazla kaç sürüm saklanır, eskiler silinir
   LLM_CONCURRENCY: "4"                      # paralel özet isteği; kurum içi LLM kapasitesine göre ayarlayın
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: release-summarizer
-stringData:
-  LLM_API_KEY: "changeme"
-  GITHUB_TOKEN: ""                          # opsiyonel, token'sız GitHub limiti 60 istek/saat
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -34,10 +28,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: release-summarizer
-  annotations:
-    # build.yaml'daki ImageStream'e yeni imaj gelince otomatik rollout.
-    # Harici registry kullanıyorsanız bu annotation'ı silip image alanına tam adresi yazın.
-    image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"release-summarizer:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"app\")].image"}]'
 spec:
   replicas: 1                 # SQLite + uygulama içi zamanlayıcı: tek replika
   strategy:
@@ -50,11 +40,12 @@ spec:
     spec:
       containers:
         - name: app
-          image: release-summarizer:latest
+          image: docker.io/mustafa12/release-summarizer:0.0.1
+          imagePullPolicy: Always   # aynı tag yeniden push'lanınca rollout restart güncel imajı çeker
           ports: [{containerPort: 8080}]
           envFrom:
             - configMapRef: {name: release-summarizer}
-            - secretRef: {name: release-summarizer}
+            - secretRef: {name: release-summarizer}   # LLM_API_KEY, opsiyonel GITHUB_TOKEN (oc create secret ile)
           volumeMounts: [{name: data, mountPath: /data}]
           readinessProbe: {httpGet: {path: /api/state, port: 8080}, periodSeconds: 10}
           livenessProbe: {httpGet: {path: /api/state, port: 8080}, periodSeconds: 30, failureThreshold: 5}
