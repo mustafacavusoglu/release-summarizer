@@ -109,6 +109,7 @@ details.raw pre { white-space: pre-wrap; word-break: break-word; font-size: 12px
   <div class="bar">
     <div class="logo">Release Summarizer <span id="ver" class="ver-tag"></span></div>
     <span id="llm" class="pill">…</span>
+    <span id="next" class="pill"></span>
     <span id="status" class="pill" hidden></span>
     <button id="markAll" class="btn" title="Tümünü okundu işaretle">✓ Tümü okundu</button>
     <button id="themeBtn" class="btn icon" aria-label="Tema değiştir"></button>
@@ -158,6 +159,10 @@ async function api(path, method = "GET") {
 function renderHeader() {
   const st = S.state, llm = $("#llm");
   $("#ver").textContent = "v" + st.version;
+  const sc = st.schedule, nx = $("#next");
+  nx.textContent = "Sonraki kontrol: " + new Date(sc.next).toLocaleString("tr-TR", { timeZone: sc.timezone, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  nx.title = `Cron: ${sc.cron} (${sc.timezone})`;
+  nx.hidden = st.running;
   llm.className = "pill " + (st.llm.configured ? "ok" : "warn");
   llm.textContent = st.llm.configured ? st.llm.model : "LLM yapılandırılmadı";
   const status = $("#status"), btn = $("#checkBtn");

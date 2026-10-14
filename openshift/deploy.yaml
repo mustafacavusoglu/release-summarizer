@@ -7,7 +7,8 @@ metadata:
 data:
   LLM_BASE_URL: "http://litellm:4000/v1"   # OpenAI uyumlu endpoint (/chat/completions'tan önceki kısım)
   LLM_MODEL: "gpt-4o-mini"
-  CHECK_INTERVAL_MINUTES: "360"
+  CHECK_CRON: "0 6 * * *"                  # her gün 06:00
+  CHECK_TIMEZONE: "Europe/Istanbul"         # GMT+3
 ---
 apiVersion: v1
 kind: Secret

@@ -14,8 +14,12 @@ yeni sürümleri OpenAI uyumlu bir LLM ile Türkçe özetler (TL;DR, öne çıka
 |---|---|---|
 | `LLM_BASE_URL`, `LLM_MODEL` | ConfigMap | — (yoksa sadece takip, özet yok) |
 | `LLM_API_KEY`, `GITHUB_TOKEN` | Secret | — |
-| `CHECK_INTERVAL_MINUTES` | ConfigMap | 360 |
+| `CHECK_CRON` | ConfigMap | `0 6 * * *` (her gün 06:00) |
+| `CHECK_TIMEZONE` | ConfigMap | `Europe/Istanbul` |
 | `DB_PATH` | imaj | `/data/releases.db` (PVC) |
+
+`CHECK_CRON` standart 5 alanlı cron'dur (`*`, `*/n`, `a-b`, `a,b`), Argo CronWorkflow `schedule` ile aynı biçim.
+Örn. `0 6 * * 1-5` hafta içi 06:00, `0 */6 * * *` 6 saatte bir. İlk kurulumda zamanı beklemeden bir kez çalışır.
 
 Kurum içi CA için `SSL_CERT_FILE`, proxy için `HTTPS_PROXY` / `NO_PROXY` env'leri yeterli.
 

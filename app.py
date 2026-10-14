@@ -5,8 +5,9 @@ import os
 import re
 import sqlite3
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import BackgroundTasks, FastAPI, HTTPException
@@ -18,7 +19,8 @@ LLM_MODEL = os.getenv("LLM_MODEL", "")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")  # opsiyonel; token'sız limit 60 istek/saat
 DB_PATH = os.getenv("DB_PATH", "data/releases.db")
-CHECK_INTERVAL_MIN = int(os.getenv("CHECK_INTERVAL_MINUTES", "360"))
+CHECK_CRON = os.getenv("CHECK_CRON", "0 6 * * *")  # dakika saat gün ay haftanın-günü
+CHECK_TZ = ZoneInfo(os.getenv("CHECK_TIMEZONE", "Europe/Istanbul"))
 SEED_PER_PRODUCT = 3  # ilk çalıştırmada ürün başına alınacak geçmiş release sayısı
 MAX_NOTES_CHARS = 15000
 
@@ -52,6 +54,47 @@ lock = asyncio.Lock()
 
 def now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _cron_field(spec, lo, hi):
+    vals = set()
+    for part in spec.split(","):
+        rng, _, step = part.partition("/")
+        if rng == "*":
+            a, b = lo, hi
+        elif "-" in rng:
+            a, b = map(int, rng.split("-"))
+        else:
+            a = b = int(rng)
+            if step:  # "5/15" = 5'ten başlayıp 15'er
+                b = hi
+        vals.update(range(a, b + 1, int(step or 1)))
+    if not vals or min(vals) < lo or max(vals) > hi:
+        raise ValueError(f"Geçersiz cron alanı: {spec!r}")
+    return vals
+
+
+def parse_cron(expr):
+    f = expr.split()
+    if len(f) != 5:
+        raise ValueError(f"Cron 5 alanlı olmalı (dakika saat gün ay haftanın-günü): {expr!r}")
+    minute, hour, dom, month, dow = (_cron_field(s, lo, hi) for s, (lo, hi) in
+                                     zip(f, [(0, 59), (0, 23), (1, 31), (1, 12), (0, 7)]))
+    return minute, hour, dom, month, {d % 7 for d in dow}, f[2] != "*" and f[4] != "*"
+
+
+def next_run(cron, after):
+    minute, hour, dom, month, dow, either_day = cron
+    t = after.replace(second=0, microsecond=0) + timedelta(minutes=1)
+    for _ in range(366 * 24 * 60):  # ponytail: dakika dakika tarama, en kötü ~0.5 sn; yeter
+        d, w = t.day in dom, t.isoweekday() % 7 in dow
+        if t.minute in minute and t.hour in hour and t.month in month and ((d or w) if either_day else (d and w)):
+            return t
+        t += timedelta(minutes=1)
+    raise ValueError("Cron bir yıl içinde hiç tetiklenmiyor")
+
+
+CRON = parse_cron(CHECK_CRON)  # hatalı ifade pod'u başlangıçta düşürsün
 
 
 async def fetch_github(c, repo):
@@ -158,9 +201,13 @@ async def run_check(only=None):
 
 
 async def scheduler():
+    if not db.execute("SELECT 1 FROM checks").fetchone():
+        await run_check()  # ilk kurulum: zamanını beklemeden doldur
+    nxt = next_run(CRON, datetime.now(CHECK_TZ))
     while True:
+        await asyncio.sleep(max(0, (nxt - datetime.now(CHECK_TZ)).total_seconds()))
         await run_check()
-        await asyncio.sleep(CHECK_INTERVAL_MIN * 60)
+        nxt = next_run(CRON, max(nxt, datetime.now(CHECK_TZ)))
 
 
 @asynccontextmanager
@@ -189,7 +236,9 @@ def state():
     return {
         "version": VERSION,
         "llm": {"configured": bool(LLM_BASE_URL and LLM_MODEL), "model": LLM_MODEL},
-        "running": lock.locked(), "pending": pending, "interval_min": CHECK_INTERVAL_MIN,
+        "running": lock.locked(), "pending": pending,
+        "schedule": {"cron": CHECK_CRON, "timezone": str(CHECK_TZ),
+                     "next": next_run(CRON, datetime.now(CHECK_TZ)).isoformat()},
         "products": [{
             "id": pid, "name": p["name"], "source": p["source"], "latest": latest.get(pid),
             "unseen": (stats.get(pid) or {}).get("unseen", 0),
