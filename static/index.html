@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Release Summarizer</title>
+<script>
+  try { document.documentElement.dataset.theme = localStorage.getItem("theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); }
+  catch { document.documentElement.dataset.theme = "light"; }
+</script>
+<style>
+:root {
+  --bg: #f5f5f4; --panel: #ffffff; --text: #1c1c1c; --muted: #6b6b6b; --line: #e2e2e0; --hover: #f0f0ee;
+  --accent: #2f5d8a; --accent-soft: #e8eef4; --on-accent: #ffffff;
+  --high: #b42318; --high-soft: #fbeceb; --med: #9a5b00; --med-soft: #f8f0e3; --low: #2e6b45; --low-soft: #e9f2ec;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --bg: #161616; --panel: #1e1e1e; --text: #e4e4e2; --muted: #9a9a96; --line: #2e2e2c; --hover: #252525;
+  --accent: #8aaed3; --accent-soft: #24303b; --on-accent: #161616;
+  --high: #e5847b; --high-soft: #3a2220; --med: #d8a85e; --med-soft: #352a1a; --low: #86bb98; --low-soft: #1f3026;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button { font: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible, summary:focus-visible, .rel-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header { position: sticky; top: 0; z-index: 10; background: var(--panel); border-bottom: 1px solid var(--line); }
+.bar { max-width: 1200px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.logo { font-weight: 700; font-size: 16px; margin-right: auto; }
+.ver-tag { font-weight: 400; font-size: 12px; color: var(--muted); }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 6px; font-size: 12px; border: 1px solid var(--line); color: var(--muted); }
+.pill.ok::before, .pill.warn::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--low); }
+.pill.warn::before { background: var(--med); }
+.btn { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 6px; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover { background: var(--hover); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.primary:hover { opacity: .9; }
+.btn.icon { padding: 6px 9px; }
+.btn:disabled { opacity: .6; cursor: default; }
+.spin { width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 60px; }
+.products { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin-bottom: 24px; }
+.pcard { position: relative; text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; color: var(--text); }
+.pcard:hover { background: var(--hover); }
+.pcard.active { border-color: var(--accent); background: var(--accent-soft); }
+.pcard .name { font-size: 12px; color: var(--muted); }
+.pcard .ver { font-size: 17px; font-weight: 600; margin: 2px 0; font-variant-numeric: tabular-nums; }
+.pcard .meta { font-size: 11px; color: var(--muted); }
+.pcard .meta.err { color: var(--high); }
+.badge { position: absolute; top: 9px; right: 10px; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 600; border-radius: 4px; padding: 0 6px; }
+
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.toolbar h2 { margin: 0 auto 0 0; font-size: 15px; font-weight: 600; }
+.search { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 6px; padding: 6px 10px; min-width: 220px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: var(--panel); color: var(--muted); padding: 6px 12px; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.on { background: var(--accent-soft); color: var(--text); font-weight: 600; }
+
+.feed { display: flex; flex-direction: column; gap: 8px; }
+.rel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.rel.unseen { border-left: 3px solid var(--accent); }
+.rel-head { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; cursor: pointer; }
+.rel-head:hover { background: var(--hover); }
+.rel-main { flex: 1; min-width: 0; }
+.rel-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.chip { font-size: 11px; padding: 1px 7px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
+.tag { font-weight: 600; font-size: 15px; font-variant-numeric: tabular-nums; }
+.new { font-size: 10px; font-weight: 700; color: var(--accent); letter-spacing: .05em; }
+.when { color: var(--muted); font-size: 12px; margin-left: auto; white-space: nowrap; }
+.tldr { margin-top: 3px; }
+.tldr.muted { color: var(--muted); font-style: italic; }
+.urg { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 4px; }
+.urg.high { background: var(--high-soft); color: var(--high); }
+.urg.medium { background: var(--med-soft); color: var(--med); }
+.urg.low { background: var(--low-soft); color: var(--low); }
+.chev { color: var(--muted); font-size: 11px; margin-top: 4px; width: 10px; }
+.rel.open .chev { transform: rotate(90deg); }
+.rel-body { display: none; padding: 0 14px 14px 34px; border-top: 1px solid var(--line); }
+.rel.open .rel-body { display: block; }
+.sec { margin-top: 12px; }
+.sec h4 { margin: 0 0 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.sec.breaking h4 { color: var(--med); }
+.sec.security h4 { color: var(--high); }
+.sec ul { margin: 0; padding-left: 18px; }
+.sec li { margin: 2px 0; }
+.reason { font-size: 13px; color: var(--muted); margin-top: 12px; }
+.actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+details.raw { margin-top: 12px; }
+details.raw summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+details.raw pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 12px; max-height: 420px; overflow: auto; }
+.errbox { color: var(--high); font-size: 13px; }
+.empty { text-align: center; color: var(--muted); padding: 60px 20px; }
+
+#toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 6px; font-size: 13px; display: none; }
+#toast.show { display: block; }
+@media (max-width: 600px) { .search { min-width: 0; flex: 1; } .when { margin-left: 0; } .rel-body { padding-left: 14px; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="logo">Release Summarizer <span id="ver" class="ver-tag"></span></div>
+    <span id="llm" class="pill">…</span>
+    <span id="status" class="pill" hidden></span>
+    <button id="markAll" class="btn" title="Tümünü okundu işaretle">✓ Tümü okundu</button>
+    <button id="themeBtn" class="btn icon" aria-label="Tema değiştir"></button>
+    <button id="checkBtn" class="btn primary">↻ Şimdi kontrol et</button>
+  </div>
+</header>
+
+<main>
+  <div id="products" class="products"></div>
+  <div class="toolbar">
+    <h2 id="feedTitle">Son güncellemeler</h2>
+    <input id="q" class="search" type="search" placeholder="Ara…  (/)" aria-label="Release ara">
+    <div class="seg" role="group" aria-label="Filtre">
+      <button data-f="all" class="on">Tümü</button>
+      <button data-f="unseen">Okunmamış</button>
+      <button data-f="important">Önemli</button>
+    </div>
+  </div>
+  <div id="feed" class="feed"><div class="empty">Yükleniyor…</div></div>
+</main>
+<div id="toast" role="status"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const rtf = new Intl.RelativeTimeFormat("tr", { numeric: "auto" });
+const URG = { high: "Yüksek", medium: "Orta", low: "Düşük" };
+let S = { state: null, releases: [], product: null, filter: "all", q: "", open: new Set() };
+
+function ago(iso) {
+  if (!iso) return "—";
+  const s = (new Date(iso) - Date.now()) / 1000;
+  for (const [u, n] of [["year", 31536000], ["month", 2592000], ["day", 86400], ["hour", 3600], ["minute", 60]])
+    if (Math.abs(s) >= n) return rtf.format(Math.round(s / n), u);
+  return "az önce";
+}
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 2500);
+}
+async function api(path, method = "GET") {
+  const r = await fetch(path, { method });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+  return r.json();
+}
+
+function renderHeader() {
+  const st = S.state, llm = $("#llm");
+  $("#ver").textContent = "v" + st.version;
+  llm.className = "pill " + (st.llm.configured ? "ok" : "warn");
+  llm.textContent = st.llm.configured ? st.llm.model : "LLM yapılandırılmadı";
+  const status = $("#status"), btn = $("#checkBtn");
+  status.hidden = !(st.running || (st.pending && st.llm.configured));
+  status.innerHTML = st.running
+    ? `<span class="spin"></span> ${st.pending ? st.pending + " özet hazırlanıyor" : "Kontrol ediliyor"}`
+    : `${st.pending} özet bekliyor`;
+  btn.disabled = st.running;
+  btn.innerHTML = st.running ? '<span class="spin"></span> Çalışıyor' : "↻ Şimdi kontrol et";
+  const total = st.products.reduce((a, p) => a + (p.unseen || 0), 0);
+  document.title = total ? `(${total}) Release Summarizer` : "Release Summarizer";
+}
+
+function renderProducts() {
+  $("#products").innerHTML = S.state.products.map(p => `
+    <button class="pcard ${S.product === p.id ? "active" : ""}" data-p="${p.id}" title="${esc(p.error || "Kaynak: " + p.source)}">
+      ${p.unseen ? `<span class="badge">${p.unseen}</span>` : ""}
+      <div class="name">${esc(p.name)}</div>
+      <div class="ver">${esc(p.latest || "—")}</div>
+      <div class="meta ${p.error ? "err" : ""}">${p.error ? "⚠ Kontrol hatası" : "Kontrol: " + ago(p.checked_at)}</div>
+    </button>`).join("");
+}
+
+function visible() {
+  const q = S.q.toLowerCase();
+  return S.releases.filter(r =>
+    (!S.product || r.product === S.product) &&
+    (S.filter !== "unseen" || !r.seen) &&
+    (S.filter !== "important" || ["high", "medium"].includes(r.summary?.urgency)) &&
+    (!q || [r.tag, r.title, r.product, r.summary?.tldr, ...(r.summary?.highlights || [])].join(" ").toLowerCase().includes(q)));
+}
+
+const list = (cls, title, items) => items?.length
+  ? `<div class="sec ${cls}"><h4>${title}</h4><ul>${items.map(i => `<li>${esc(i)}</li>`).join("")}</ul></div>` : "";
+
+function relHTML(r) {
+  const key = r.product + "@" + r.tag, s = r.summary, name = S.state.products.find(p => p.id === r.product)?.name || r.product;
+  const tldr = !s ? (S.state.llm.configured ? '<div class="tldr muted">Özet hazırlanıyor…</div>' : '<div class="tldr muted">Özet yok (LLM yapılandırılmadı)</div>')
+    : s.error ? '<div class="tldr muted">Özet alınamadı</div>'
+    : `<div class="tldr">${esc(s.tldr)}</div>`;
+  return `
+  <article class="rel ${r.seen ? "" : "unseen"} ${S.open.has(key) ? "open" : ""}" data-key="${esc(key)}">
+    <div class="rel-head" tabindex="0" role="button" aria-expanded="${S.open.has(key)}">
+      <span class="chev">▶</span>
+      <div class="rel-main">
+        <div class="rel-title">
+          <span class="chip">${esc(name)}</span>
+          <span class="tag">${esc(r.tag)}</span>
+          ${s?.urgency in URG ? `<span class="urg ${s.urgency}">${URG[s.urgency]}</span>` : ""}
+          ${r.seen ? "" : '<span class="new">YENİ</span>'}
+          <span class="when" title="${esc(r.published)}">${ago(r.published)}</span>
+        </div>
+        ${tldr}
+      </div>
+    </div>
+    <div class="rel-body">
+      ${s?.error ? `<div class="sec errbox">${esc(s.error)}</div>` : ""}
+      ${list("", "Öne çıkanlar", s?.highlights)}
+      ${list("breaking", "Breaking / Migration", s?.breaking)}
+      ${list("security", "Güvenlik", s?.security)}
+      ${s?.urgency_reason ? `<div class="reason">Aciliyet: ${esc(s.urgency_reason)}</div>` : ""}
+      <details class="raw"><summary>Orijinal sürüm notları</summary><pre>${esc(r.body || "(boş)")}</pre></details>
+      <div class="actions">
+        <a class="btn" href="${esc(r.url)}" target="_blank" rel="noopener">Kaynağa git ↗</a>
+        ${S.state.llm.configured ? `<button class="btn" data-resum="${esc(key)}">Yeniden özetle</button>` : ""}
+      </div>
+    </div>
+  </article>`;
+}
+
+function renderFeed() {
+  const v = visible(), p = S.state.products.find(p => p.id === S.product);
+  $("#feedTitle").textContent = p ? `${p.name} sürümleri` : "Son güncellemeler";
+  $("#feed").innerHTML = v.length ? v.map(relHTML).join("")
+    : `<div class="empty">${S.releases.length ? "Bu filtreye uyan sürüm yok." : "Henüz veri yok — ilk kontrol çalışıyor olabilir."}</div>`;
+}
+
+function render() { renderHeader(); renderProducts(); renderFeed(); }
+
+async function refresh() {
+  try {
+    [S.state, S.releases] = await Promise.all([api("/api/state"), api("/api/releases")]);
+    render();
+  } catch (e) { toast("Sunucuya ulaşılamadı: " + e.message); }
+  clearTimeout(refresh.t);
+  refresh.t = setTimeout(refresh, S.state?.running ? 3000 : 60000);
+}
+
+const findRel = key => S.releases.find(r => r.product + "@" + r.tag === key);
+
+$("#products").addEventListener("click", e => {
+  const c = e.target.closest(".pcard"); if (!c) return;
+  S.product = S.product === c.dataset.p ? null : c.dataset.p;
+  renderProducts(); renderFeed();
+});
+
+$("#feed").addEventListener("click", async e => {
+  const resum = e.target.closest("[data-resum]");
+  if (resum) {
+    const r = findRel(resum.dataset.resum);
+    resum.disabled = true; resum.innerHTML = '<span class="spin"></span> Özetleniyor';
+    try {
+      r.summary = await api(`/api/summarize?product=${encodeURIComponent(r.product)}&tag=${encodeURIComponent(r.tag)}`, "POST");
+      toast(r.summary.error ? "Özet alınamadı" : "Özet güncellendi");
+    } catch (err) { toast(err.message); }
+    renderFeed(); return;
+  }
+  const head = e.target.closest(".rel-head"); if (!head) return;
+  const key = head.parentElement.dataset.key, r = findRel(key);
+  S.open.has(key) ? S.open.delete(key) : S.open.add(key);
+  if (!r.seen) {
+    r.seen = 1;
+    const p = S.state.products.find(p => p.id === r.product); if (p) p.unseen = Math.max(0, p.unseen - 1);
+    api(`/api/seen?product=${encodeURIComponent(r.product)}&tag=${encodeURIComponent(r.tag)}`, "POST").catch(() => {});
+    renderHeader(); renderProducts();
+  }
+  renderFeed();
+});
+$("#feed").addEventListener("keydown", e => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.classList.contains("rel-head")) { e.preventDefault(); e.target.click(); }
+});
+
+$(".seg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  S.filter = b.dataset.f;
+  document.querySelectorAll(".seg button").forEach(x => x.classList.toggle("on", x === b));
+  renderFeed();
+});
+$("#q").addEventListener("input", e => { S.q = e.target.value; renderFeed(); });
+document.addEventListener("keydown", e => {
+  if (e.key === "/" && document.activeElement !== $("#q")) { e.preventDefault(); $("#q").focus(); }
+  if (e.key === "Escape") { $("#q").value = S.q = ""; $("#q").blur(); renderFeed(); }
+});
+
+$("#checkBtn").addEventListener("click", async () => {
+  await api("/api/check" + (S.product ? "?product=" + S.product : ""), "POST");
+  toast(S.product ? "Ürün kontrol ediliyor…" : "Tüm ürünler kontrol ediliyor…");
+  setTimeout(refresh, 400);
+});
+$("#markAll").addEventListener("click", async () => {
+  await api("/api/seen" + (S.product ? "?product=" + S.product : ""), "POST");
+  toast("Okundu olarak işaretlendi"); refresh();
+});
+
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  $("#themeBtn").textContent = t === "dark" ? "☀" : "☾";
+  $("#themeBtn").title = t === "dark" ? "Açık tema" : "Koyu tema";
+}
+$("#themeBtn").addEventListener("click", () => {
+  const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  setTheme(t); try { localStorage.setItem("theme", t); } catch {}
+});
+setTheme(document.documentElement.dataset.theme);
+
+refresh();
+</script>
+</body>
+</html>

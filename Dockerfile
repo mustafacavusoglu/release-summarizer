@@ -1,21 +1,18 @@
-FROM python:3.12-slim
+FROM registry.access.redhat.com/ubi9/python-312
 
-WORKDIR /app
-
+# Kurum içi PyPI mirror için: --build-arg PIP_INDEX_URL=https://nexus.../simple
+ARG PIP_INDEX_URL
+WORKDIR /opt/app-root/src
 COPY requirements.txt .
-RUN pip install --no-cache-dir --quiet -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+COPY app.py .
+COPY static static
 
-COPY . .
-
-# OpenShift: container'lar rastgele UID ile çalışır, group 0 (root group) sabit kalır.
-# g=u: group izinlerini user izinleriyle eşitler → rastgele UID yazabilir.
-RUN mkdir -p data && \
-    chown -R 1001:0 /app && \
-    chmod -R g=u /app
-
+# OpenShift rastgele UID + GID 0 ile çalıştırır: /data grup 0 tarafından yazılabilir olmalı
+USER 0
+RUN mkdir -p /data && chgrp -R 0 /data && chmod -R g=u /data
 USER 1001
 
-EXPOSE 8000
-
-# Varsayılan: web API. CronJob için command override edilir: ["python", "job.py"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENV DB_PATH=/data/releases.db PYTHONUNBUFFERED=1
+EXPOSE 8080
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]

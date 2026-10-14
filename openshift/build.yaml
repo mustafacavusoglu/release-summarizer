@@ -1,0 +1,21 @@
+# Cluster içinde imaj build'i (binary build): oc apply -f openshift/build.yaml
+# sonra: oc start-build release-summarizer --from-dir=. --follow
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: release-summarizer
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: release-summarizer
+spec:
+  source:
+    type: Binary
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+      # buildArgs: [{name: PIP_INDEX_URL, value: "https://nexus.example/repository/pypi/simple"}]
+  output:
+    to: {kind: ImageStreamTag, name: "release-summarizer:latest"}

@@ -1,10 +1,6 @@
-.env
-.venv/
-.git/
-__pycache__/
-**/__pycache__/
-*.pyc
-*.pyo
 data/
+__pycache__/
 *.db
-.gitignore
+test_app.py
+openshift.yaml
+README.md

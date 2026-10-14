@@ -1,0 +1,85 @@
+# oc apply -f openshift/deploy.yaml
+# Değer değiştirmek: oc edit configmap/release-summarizer && oc rollout restart deploy/release-summarizer
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: release-summarizer
+data:
+  LLM_BASE_URL: "http://litellm:4000/v1"   # OpenAI uyumlu endpoint (/chat/completions'tan önceki kısım)
+  LLM_MODEL: "gpt-4o-mini"
+  CHECK_INTERVAL_MINUTES: "360"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: release-summarizer
+stringData:
+  LLM_API_KEY: "changeme"
+  GITHUB_TOKEN: ""                          # opsiyonel, token'sız GitHub limiti 60 istek/saat
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: release-summarizer-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: release-summarizer
+  annotations:
+    # build.yaml'daki ImageStream'e yeni imaj gelince otomatik rollout.
+    # Harici registry kullanıyorsanız bu annotation'ı silip image alanına tam adresi yazın.
+    image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"release-summarizer:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"app\")].image"}]'
+spec:
+  replicas: 1                 # SQLite + uygulama içi zamanlayıcı: tek replika
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: release-summarizer}
+  template:
+    metadata:
+      labels: {app: release-summarizer}
+    spec:
+      containers:
+        - name: app
+          image: release-summarizer:latest
+          ports: [{containerPort: 8080}]
+          envFrom:
+            - configMapRef: {name: release-summarizer}
+            - secretRef: {name: release-summarizer}
+          volumeMounts: [{name: data, mountPath: /data}]
+          readinessProbe: {httpGet: {path: /api/state, port: 8080}, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /api/state, port: 8080}, periodSeconds: 30, failureThreshold: 5}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: release-summarizer-data}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: release-summarizer
+spec:
+  selector: {app: release-summarizer}
+  ports: [{name: http, port: 8080, targetPort: 8080}]
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: release-summarizer
+spec:
+  to: {kind: Service, name: release-summarizer}
+  port: {targetPort: http}
+  tls: {termination: edge, insecureEdgeTerminationPolicy: Redirect}
