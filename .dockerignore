@@ -1,6 +1,7 @@
 data/
 __pycache__/
 *.db
-test_app.py
+tests/
+**/__pycache__/
 openshift.yaml
 README.md

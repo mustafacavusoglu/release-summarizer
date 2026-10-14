@@ -14,6 +14,7 @@ yeni sürümleri OpenAI uyumlu bir LLM ile Türkçe özetler (TL;DR, öne çıka
 |---|---|---|
 | `LLM_BASE_URL`, `LLM_MODEL` | ConfigMap | — (yoksa sadece takip, özet yok) |
 | `LLM_API_KEY`, `GITHUB_TOKEN` | Secret | — |
+| `RETENTION_PER_PRODUCT` | ConfigMap | 10 (ürün başına saklanan sürüm, en az 3) |
 | `LLM_CONCURRENCY` | ConfigMap | 4 (paralel özet isteği) |
 | `CHECK_CRON` | ConfigMap | `0 6 * * *` (her gün 06:00) |
 | `CHECK_TIMEZONE` | ConfigMap | `Europe/Istanbul` |
@@ -46,16 +47,42 @@ podman push registry.example/mlops/release-summarizer:0.0.1
 ## Lokal
 ```bash
 pip install -r requirements.txt
-LLM_BASE_URL=http://localhost:4000/v1 LLM_MODEL=gpt-4o-mini LLM_API_KEY=sk-... DB_PATH=data/releases.db uvicorn app:app --port 8080
-python test_app.py
+LLM_BASE_URL=http://localhost:4000/v1 LLM_MODEL=gpt-4o-mini LLM_API_KEY=sk-... DB_PATH=data/releases.db uvicorn release_summarizer.main:app --port 8080
+python -m tests.test_core
 ```
 
-Ürün eklemek: `app.py` içindeki `PRODUCTS` sözlüğüne `{"name": ..., "repo": "owner/repo"}` ekleyin.
+Ürün eklemek: `release_summarizer/config.py` içindeki `PRODUCTS` sözlüğüne `{"name": ..., "repo": "owner/repo"}` ekleyin.
 ### Hangi sürümler izleniyor?
 Her ürün için **n, n-1, n-2** (n = en yüksek stable sürüm, sıralama yayın tarihine değil sürüm numarasına göre)
 ve **n'den yeni RC'ler** (release candidate, stable öncesi aday sürüm; arayüzde `RC` etiketiyle).
 Stable çıkınca eski RC'ler listede kalır ama yeni RC eklenmez. İlk kurulumdakiler okunmuş sayılır,
-sonra gelenler "YENİ" olarak düşer. Sayı `app.py` içindeki `KEEP_STABLE` ile değiştirilir.
+sonra gelenler "YENİ" olarak düşer. Sayı `config.py` içindeki `KEEP_STABLE` ile değiştirilir.
+
+## Veri ve saklama
+Tek SQLite dosyası: `DB_PATH` (imajda `/data/releases.db`, OpenShift'te `release-summarizer-data` PVC).
+Sürüm notları, LLM özetleri, okundu bilgisi ve ürün başına son kontrol zamanı burada tutulur.
+
+Her kontrolden sonra temizlik çalışır:
+- Ürün başına sürüm numarasına göre en yeni `RETENTION_PER_PRODUCT` (varsayılan 10) kayıt kalır, eskiler silinir.
+- Stable'ı çıkmış RC'ler silinir (ör. `v1.106.0` çıkınca `v1.106.0-rc.*`).
+- `PRODUCTS` listesinden çıkarılan ürünlerin kayıtları silinir.
+
+Bu limitle veritabanı birkaç MB'ı geçmez. Yedek: `oc cp <pod>:/data/releases.db ./releases.db`.
+
+## Proje yapısı
+```
+release_summarizer/
+├── config.py    # env değişkenleri, izlenen ürünler
+├── versions.py  # tag tanıma/sıralama, n..n-2 + rc seçimi
+├── cron.py      # bağımlılıksız cron ifadesi
+├── sources.py   # GitHub Releases, OpenShift mirror
+├── db.py        # SQLite, saklama/temizlik
+├── llm.py       # prompt ve OpenAI uyumlu çağrı
+├── service.py   # akış: çek → kaydet → temizle → özetle, zamanlayıcı
+├── main.py      # FastAPI uç noktaları
+└── static/index.html
+tests/test_core.py
+```
 
 ## Yol haritası
 - **v0.0.1** — release takibi, LLM özeti, web arayüzü, OpenShift deploy

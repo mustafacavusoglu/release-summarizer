@@ -9,6 +9,7 @@ data:
   LLM_MODEL: "gpt-4o-mini"
   CHECK_CRON: "0 6 * * *"                  # her gün 06:00
   CHECK_TIMEZONE: "Europe/Istanbul"         # GMT+3
+  RETENTION_PER_PRODUCT: "10"               # ürün başına en fazla kaç sürüm saklanır, eskiler silinir
   LLM_CONCURRENCY: "4"                      # paralel özet isteği; kurum içi LLM kapasitesine göre ayarlayın
 ---
 apiVersion: v1
