@@ -23,6 +23,7 @@ CHECK_CRON = os.getenv("CHECK_CRON", "0 6 * * *")  # dakika saat gün ay haftan�
 CHECK_TZ = ZoneInfo(os.getenv("CHECK_TIMEZONE", "Europe/Istanbul"))
 KEEP_STABLE = 3  # n, n-1, n-2 (n = en yüksek stable sürüm)
 MAX_NOTES_CHARS = 15000
+LLM_CONCURRENCY = int(os.getenv("LLM_CONCURRENCY", "4"))  # aynı anda en fazla kaç özet isteği
 
 PRODUCTS = {
     "litellm": {"name": "LiteLLM", "repo": "BerriAI/litellm"},
@@ -211,9 +212,7 @@ async def run_check(only=None):
     if lock.locked():
         return
     async with lock, httpx.AsyncClient(timeout=30, follow_redirects=True) as c:
-        for pid, p in PRODUCTS.items():
-            if only and pid != only:
-                continue
+        async def check_product(pid, p):
             err = None
             try:
                 store(pid, await (fetch_github(c, p["repo"]) if "repo" in p else fetch_ocp(c, p["ocp"])))
@@ -221,9 +220,18 @@ async def run_check(only=None):
                 err = f"{type(e).__name__}: {e}"[:300]
             db.execute("INSERT OR REPLACE INTO checks VALUES(?,?,?)", (pid, now(), err))
             db.commit()
+
+        await asyncio.gather(*(check_product(pid, p) for pid, p in PRODUCTS.items() if not only or pid == only))
+
         if LLM_BASE_URL and LLM_MODEL:
-            for row in db.execute("SELECT * FROM releases WHERE summary IS NULL ORDER BY published DESC").fetchall():
-                await summarize(c, row)
+            sem = asyncio.Semaphore(LLM_CONCURRENCY)
+
+            async def limited(row):
+                async with sem:
+                    await summarize(c, row)
+
+            rows = db.execute("SELECT * FROM releases WHERE summary IS NULL ORDER BY published DESC").fetchall()
+            await asyncio.gather(*map(limited, rows))
 
 
 async def scheduler():

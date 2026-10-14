@@ -14,6 +14,7 @@ yeni sürümleri OpenAI uyumlu bir LLM ile Türkçe özetler (TL;DR, öne çıka
 |---|---|---|
 | `LLM_BASE_URL`, `LLM_MODEL` | ConfigMap | — (yoksa sadece takip, özet yok) |
 | `LLM_API_KEY`, `GITHUB_TOKEN` | Secret | — |
+| `LLM_CONCURRENCY` | ConfigMap | 4 (paralel özet isteği) |
 | `CHECK_CRON` | ConfigMap | `0 6 * * *` (her gün 06:00) |
 | `CHECK_TIMEZONE` | ConfigMap | `Europe/Istanbul` |
 | `DB_PATH` | imaj | `/data/releases.db` (PVC) |
