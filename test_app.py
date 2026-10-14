@@ -1,23 +1,34 @@
 import os, tempfile
 os.environ["DB_PATH"] = tempfile.mktemp(suffix=".db")
-from app import STABLE_TAG, parse_ocp, parse_summary, store, db
+from app import TAG, vkey, is_rc, pick, parse_ocp, parse_summary, store, db
 
-assert all(STABLE_TAG.match(t) for t in ["v1.2.3", "4.22.17", "v2.73.0"])
-assert not any(STABLE_TAG.match(t) for t in ["v1.106.0-rc.2", "v3.6.0-ea.2", "model-catalog/latest", "v1.2.3-nightly"])
+assert all(TAG.match(t) for t in ["v1.2.3", "4.22.17", "v1.106.0-rc.2", "v3.13.0rc0", "v0.10.1rc1"])
+assert not any(TAG.match(t) for t in ["v3.6.0-ea.2", "model-catalog/latest", "v1.2.3-nightly", "v1.106.0-dev.3", "ts/v0.2.0-rc.1"])
+assert is_rc("v1.106.0-rc.2") and is_rc("v3.13.0rc0") and not is_rc("v1.105.1")
+assert vkey("v1.106.0-rc.1") < vkey("v1.106.0-rc.2") < vkey("v1.106.0") < vkey("v1.106.1")
+assert vkey("v1.105.1") < vkey("v1.106.0-rc.1")
+assert vkey("4.22.9") < vkey("4.22.17")  # sayısal, alfabetik değil
 
 assert parse_summary('<think>hmm {x}</think>```json\n{"tldr": "ok", "urgency": "low"}\n```') == {"tldr": "ok", "urgency": "low"}
 assert parse_summary("düz metin") == {"tldr": "düz metin"}
 
-txt = "intro\nName:           4.22.17\nCreated:        2026-10-01T19:50:27Z\n  Metadata:\n    url: https://access.redhat.com/errata/RHSA-2026:74429\n\nImages:\n  cli  quay.io/x"
-r = parse_ocp(txt, "src")[0]
+txt = ("intro\nName:           4.22.17\nCreated:        2026-10-01T19:50:27Z\n\nRelease Metadata:\n"
+       "  Version:  4.22.17\n  Upgrades: 4.21.36, 4.22.9, 4.22.16, 4.22.15\n  Metadata:\n"
+       "    url: https://access.redhat.com/errata/RHSA-2026:74429\n\nImages:\n  cli  quay.io/x")
+r = parse_ocp(txt, "src")
 assert (r["tag"], r["published"], r["url"]) == ("4.22.17", "2026-10-01T19:50:27Z", "https://access.redhat.com/errata/RHSA-2026:74429")
 assert "Images" not in r["body"]
+assert sorted(r["upgrades"], key=vkey, reverse=True)[:2] == ["4.22.16", "4.22.15"]
 
-rel = lambda t, d: {"tag": t, "title": t, "url": "", "published": d, "body": ""}
-store("x", [rel(f"v1.{i}", f"2026-01-0{i}") for i in range(1, 6)])  # ilk çalıştırma: en yeni 3, okunmuş
-assert [r[0] for r in db.execute("SELECT tag FROM releases WHERE seen=1 ORDER BY tag")] == ["v1.3", "v1.4", "v1.5"]
-store("x", [rel("v1.6", "2026-01-06"), rel("v1.5", "2026-01-05"), rel("v1.1", "2026-01-01")])  # sonraki: sadece yeniler, eskiler geri dolmaz
-assert [r[0] for r in db.execute("SELECT tag FROM releases WHERE seen=0")] == ["v1.6"]
+rel = lambda t, d="2026-01-01": {"tag": t, "title": t, "url": "", "published": d, "body": ""}
+tags = lambda rs: [r["tag"] for r in rs]
+# yayın sırası karışık: eski hatta backport (v1.3.9) en son yayımlanmış olabilir
+src = [rel("v1.5.0-rc.1"), rel("v1.4.1"), rel("v1.3.9"), rel("v1.4.0"), rel("v1.4.0-rc.2"), rel("v1.2.0"), rel("v1.5.0-dev.1")]
+assert tags(pick(src)) == ["v1.5.0-rc.1", "v1.4.1", "v1.4.0", "v1.3.9"]  # n'den yeni rc + n, n-1, n-2
+store("x", src)  # ilk kurulum: hepsi okunmuş
+assert db.execute("SELECT COUNT(*) FROM releases WHERE seen=0").fetchone()[0] == 0
+store("x", src + [rel("v1.5.0"), rel("v1.5.0-rc.2")])  # stable çıktı -> yeni n; eski rc'ler eklenmez
+assert [r[0] for r in db.execute("SELECT tag FROM releases WHERE seen=0")] == ["v1.5.0"]
 print("ok")
 
 from datetime import datetime

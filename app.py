@@ -21,14 +21,14 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")  # opsiyonel; token'sız limit 60 i
 DB_PATH = os.getenv("DB_PATH", "data/releases.db")
 CHECK_CRON = os.getenv("CHECK_CRON", "0 6 * * *")  # dakika saat gün ay haftanın-günü
 CHECK_TZ = ZoneInfo(os.getenv("CHECK_TIMEZONE", "Europe/Istanbul"))
-SEED_PER_PRODUCT = 3  # ilk çalıştırmada ürün başına alınacak geçmiş release sayısı
+KEEP_STABLE = 3  # n, n-1, n-2 (n = en yüksek stable sürüm)
 MAX_NOTES_CHARS = 15000
 
 PRODUCTS = {
     "litellm": {"name": "LiteLLM", "repo": "BerriAI/litellm"},
     "mlflow": {"name": "MLflow", "repo": "mlflow/mlflow"},
     "langfuse": {"name": "Langfuse", "repo": "langfuse/langfuse"},
-    "openshift": {"name": "OpenShift", "ocp": "https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/release.txt"},
+    "openshift": {"name": "OpenShift", "ocp": "https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp"},
     # ponytail: RHOAI'nin public GitHub release'i yok, upstream Open Data Hub izleniyor
     "openshift-ai": {"name": "OpenShift AI (ODH)", "repo": "opendatahub-io/opendatahub-operator"},
     "code-server": {"name": "code-server", "repo": "coder/code-server"},
@@ -36,9 +36,28 @@ PRODUCTS = {
     "vllm": {"name": "vLLM", "repo": "vllm-project/vllm"},
 }
 for p in PRODUCTS.values():
-    p["source"] = f"https://github.com/{p['repo']}/releases" if "repo" in p else p["ocp"]
+    p["source"] = f"https://github.com/{p['repo']}/releases" if "repo" in p else p["ocp"] + "/stable/release.txt"
 
-STABLE_TAG = re.compile(r"^v?\d+(\.\d+)+$")  # rc/ea/nightly/model-catalog gibi tag'leri eler
+# stable (v1.2.3) ve rc (v1.2.3-rc.1, v1.2.3rc1); dev/ea/nightly/model-catalog gibi tag'ler elenir
+TAG = re.compile(r"^v?(\d+(?:\.\d+)+)(?:-?rc\.?(\d+))?$", re.I)
+
+
+def vkey(tag):
+    """Sürüm sıralama anahtarı: 1.106.0-rc.2 < 1.106.0 < 1.106.1"""
+    m = TAG.match(tag)
+    return tuple(map(int, m[1].split("."))), m[2] is None, int(m[2] or 0)
+
+
+def is_rc(tag):
+    return TAG.match(tag)[2] is not None
+
+
+def pick(rels):
+    """n, n-1, n-2 stable + n'den yeni rc'ler."""
+    rels = sorted((r for r in rels if TAG.match(r["tag"])), key=lambda r: vkey(r["tag"]), reverse=True)
+    stable = [r for r in rels if not is_rc(r["tag"])][:KEEP_STABLE]
+    n = vkey(stable[0]["tag"]) if stable else ((0,), True, 0)
+    return [r for r in rels if is_rc(r["tag"]) and vkey(r["tag"]) > n] + stable
 
 Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
 db = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -99,13 +118,13 @@ CRON = parse_cron(CHECK_CRON)  # hatalı ifade pod'u başlangıçta düşürsün
 
 async def fetch_github(c, repo):
     headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
-    r = await c.get(f"https://api.github.com/repos/{repo}/releases", params={"per_page": 30}, headers=headers)
+    r = await c.get(f"https://api.github.com/repos/{repo}/releases", params={"per_page": 50}, headers=headers)
     r.raise_for_status()
     return [
         {"tag": x["tag_name"], "title": x["name"] or x["tag_name"], "url": x["html_url"],
          "published": x["published_at"], "body": x["body"] or ""}
         for x in r.json()
-        if not x["draft"] and not x["prerelease"] and STABLE_TAG.match(x["tag_name"])
+        if not x["draft"]
     ]
 
 
@@ -116,21 +135,27 @@ def parse_ocp(text, source):
         raise ValueError("release.txt içinde 'Name:' bulunamadı")
     created = re.search(r"^Created:\s+(\S+)", head, re.M)
     errata = re.search(r"url:\s+(https://\S+)", head)
-    return [{"tag": name[1], "title": f"OpenShift {name[1]}", "url": errata[1] if errata else source,
-             "published": created[1] if created else now(), "body": head[name.start():].strip()}]
+    upgrades = re.search(r"^\s*Upgrades:\s*(.+)$", head, re.M)
+    return {"tag": name[1], "title": f"OpenShift {name[1]}", "url": errata[1] if errata else source,
+            "published": created[1] if created else now(), "body": head[name.start():].strip(),
+            "upgrades": [v for v in re.split(r",\s*", upgrades[1].strip()) if TAG.match(v)] if upgrades else []}
 
 
-async def fetch_ocp(c, url):
-    r = await c.get(url)
-    r.raise_for_status()
-    return parse_ocp(r.text, url)
+async def fetch_ocp(c, mirror):
+    async def get(ver):
+        url = f"{mirror}/{ver}/release.txt"
+        r = await c.get(url)
+        r.raise_for_status()
+        return parse_ocp(r.text, url)
+    n = await get("stable")
+    # n-1, n-2: n'e yükseltilebilen sürümler (stable kanalın önceki z-stream'leri)
+    prev = sorted(n["upgrades"], key=vkey, reverse=True)[:KEEP_STABLE - 1]
+    return [n, *await asyncio.gather(*map(get, prev))]
 
 
 def store(pid, rels):
-    rels.sort(key=lambda r: r["published"] or "", reverse=True)
-    cutoff = db.execute("SELECT MAX(published) FROM releases WHERE product=?", (pid,)).fetchone()[0]
-    first = cutoff is None
-    for r in rels[:SEED_PER_PRODUCT] if first else [r for r in rels if (r["published"] or "") > cutoff]:
+    first = not db.execute("SELECT 1 FROM releases WHERE product=?", (pid,)).fetchone()
+    for r in pick(rels):
         db.execute(
             "INSERT OR IGNORE INTO releases(product,tag,title,url,published,body,seen,found_at) VALUES(?,?,?,?,?,?,?,?)",
             (pid, r["tag"], r["title"], r["url"], r["published"], r["body"], int(first), now()))
@@ -138,7 +163,7 @@ def store(pid, rels):
 
 
 PROMPT = """Bir MLOps ekibi için aşağıdaki sürüm notlarını Türkçe özetle.
-Ürün: {name} {tag}
+Ürün: {name} {tag}{rc_note}
 
 YALNIZCA şu şemada geçerli JSON döndür, başka metin yazma:
 {{"tldr": "tek cümlelik özet",
@@ -165,6 +190,7 @@ def parse_summary(text):
 
 async def summarize(c, row):
     prompt = PROMPT.format(name=PRODUCTS[row["product"]]["name"], tag=row["tag"],
+                           rc_note=" (release candidate: stable öncesi aday sürüm, bunu özette belirt)" if is_rc(row["tag"]) else "",
                            notes=(row["body"] or "(not yok)")[:MAX_NOTES_CHARS])
     try:
         r = await c.post(f"{LLM_BASE_URL}/chat/completions", timeout=300,
@@ -230,8 +256,14 @@ def state():
     checks = {r["product"]: dict(r) for r in db.execute("SELECT * FROM checks")}
     stats = {r["product"]: dict(r) for r in db.execute(
         "SELECT product, SUM(1-seen) unseen, COUNT(*) total FROM releases GROUP BY product")}
-    latest = {r["product"]: r["tag"] for r in db.execute(
-        "SELECT product, tag, MAX(published) FROM releases GROUP BY product")}
+    tags = {}
+    for r in db.execute("SELECT product, tag FROM releases"):
+        tags.setdefault(r["product"], []).append(r["tag"])
+    for pid, ts in tags.items():
+        ts.sort(key=vkey, reverse=True)
+        stable = [t for t in ts if not is_rc(t)][:KEEP_STABLE]
+        rc = [t for t in ts if is_rc(t) and (not stable or vkey(t) > vkey(stable[0]))]
+        tags[pid] = {"stable": stable, "rc": rc[0] if rc else None}
     pending = db.execute("SELECT COUNT(*) FROM releases WHERE summary IS NULL").fetchone()[0]
     return {
         "version": VERSION,
@@ -240,7 +272,7 @@ def state():
         "schedule": {"cron": CHECK_CRON, "timezone": str(CHECK_TZ),
                      "next": next_run(CRON, datetime.now(CHECK_TZ)).isoformat()},
         "products": [{
-            "id": pid, "name": p["name"], "source": p["source"], "latest": latest.get(pid),
+            "id": pid, "name": p["name"], "source": p["source"], **tags.get(pid, {"stable": [], "rc": None}),
             "unseen": (stats.get(pid) or {}).get("unseen", 0),
             "checked_at": (checks.get(pid) or {}).get("checked_at"),
             "error": (checks.get(pid) or {}).get("error"),

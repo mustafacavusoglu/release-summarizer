@@ -5,9 +5,9 @@ yeni sürümleri OpenAI uyumlu bir LLM ile Türkçe özetler (TL;DR, öne çıka
 
 | Ürün | Kaynak |
 |---|---|
-| OpenShift | `mirror.openshift.com/.../ocp/stable/release.txt` (stable kanal) |
+| OpenShift | `mirror.openshift.com/.../ocp/stable/release.txt` (stable kanal; n-1, n-2 `Upgrades:` listesinden) |
 | OpenShift AI | `opendatahub-io/opendatahub-operator` (upstream ODH) |
-| Diğerleri | GitHub Releases (rc/ea/nightly hariç) |
+| Diğerleri | GitHub Releases (dev/ea/nightly hariç) |
 
 ## Ayarlar (env)
 | Değişken | Nerede | Varsayılan |
@@ -50,7 +50,11 @@ python test_app.py
 ```
 
 Ürün eklemek: `app.py` içindeki `PRODUCTS` sözlüğüne `{"name": ..., "repo": "owner/repo"}` ekleyin.
-İlk çalıştırmada ürün başına son 3 sürüm alınır (okunmuş olarak); sonrakilerde yeniler "YENİ" olarak düşer.
+### Hangi sürümler izleniyor?
+Her ürün için **n, n-1, n-2** (n = en yüksek stable sürüm, sıralama yayın tarihine değil sürüm numarasına göre)
+ve **n'den yeni RC'ler** (release candidate, stable öncesi aday sürüm; arayüzde `RC` etiketiyle).
+Stable çıkınca eski RC'ler listede kalır ama yeni RC eklenmez. İlk kurulumdakiler okunmuş sayılır,
+sonra gelenler "YENİ" olarak düşer. Sayı `app.py` içindeki `KEEP_STABLE` ile değiştirilir.
 
 ## Yol haritası
 - **v0.0.1** — release takibi, LLM özeti, web arayüzü, OpenShift deploy
