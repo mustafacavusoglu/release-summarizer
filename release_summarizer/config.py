@@ -11,6 +11,11 @@ LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_CONCURRENCY = int(os.getenv("LLM_CONCURRENCY", "4"))  # aynı anda en fazla kaç özet isteği
 LLM_CONFIGURED = bool(LLM_BASE_URL and LLM_MODEL)
 MAX_NOTES_CHARS = 15000  # LLM'e gönderilen sürüm notu üst sınırı
+CHAT_MAX_CHARS = int(os.getenv("CHAT_MAX_CHARS", "400000"))  # sohbette bağlama giren toplam not (~100k token)
+
+# Kullandığımız sürümler: "litellm=1.98.0,mlflow=3.15.0"
+# ponytail: şimdilik ConfigMap'te elle (dummy); operatör reposu bağlanınca oradan okunacak
+INSTALLED = dict(x.strip().split("=", 1) for x in os.getenv("INSTALLED_VERSIONS", "").split(",") if "=" in x)
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")  # opsiyonel; token'sız limit 60 istek/saat
 

@@ -17,6 +17,8 @@ yeni sürümleri OpenAI uyumlu bir LLM ile Türkçe özetler (TL;DR, öne çıka
 | `RETENTION_PER_PRODUCT` | ConfigMap | 10 (ürün başına saklanan sürüm, en az 3) |
 | `LLM_CONCURRENCY` | ConfigMap | 4 (paralel özet isteği) |
 | `CHECK_CRON` | ConfigMap | `0 6 * * *` (her gün 06:00) |
+| `INSTALLED_VERSIONS` | ConfigMap | — (`litellm=1.98.0,mlflow=3.15.1`; kullandığımız sürümler, şimdilik dummy, ileride operatör reposundan) |
+| `CHAT_MAX_CHARS` | ConfigMap | 400000 (sohbette LLM'e giden toplam sürüm notu, ~100k token) |
 | `CHECK_TIMEZONE` | ConfigMap | `Europe/Istanbul` |
 | `DB_PATH` | imaj | `/data/releases.db` (PVC) |
 
@@ -46,6 +48,15 @@ docker build --platform linux/amd64 -t mustafa12/release-summarizer:0.0.1 -t mus
 docker push mustafa12/release-summarizer:0.0.1 && docker push mustafa12/release-summarizer:latest
 ```
 
+### Lokal OpenShift (crc)
+Apple Silicon'da crc arm64'tür, Hub imajı amd64 olduğundan imaj cluster'da build edilir (`openshift-crc/` overlay'i):
+```bash
+eval $(crc oc-env) && oc new-project release-summarizer
+oc create secret generic release-summarizer --from-literal=LLM_API_KEY=<key>
+oc apply -k openshift-crc && oc start-build release-summarizer --from-dir=. --follow
+oc rollout restart deploy/release-summarizer   # https://release-summarizer-release-summarizer.apps-crc.testing
+```
+
 ## Lokal
 ```bash
 pip install -r requirements.txt
@@ -59,6 +70,11 @@ Her ürün için **n, n-1, n-2** (n = en yüksek stable sürüm, sıralama yayı
 ve **n'den yeni RC'ler** (release candidate, stable öncesi aday sürüm; arayüzde `RC` etiketiyle).
 Stable çıkınca eski RC'ler listede kalır ama yeni RC eklenmez. İlk kurulumdakiler okunmuş sayılır,
 sonra gelenler "YENİ" olarak düşer. Sayı `config.py` içindeki `KEEP_STABLE` ile değiştirilir.
+
+## Sürüm notlarına sor (sohbet)
+Üstteki **💬 Sor** paneli. Ürün ve mevcut sürüm seçilir (kullanılan sürüm otomatik dolar). Soru gelince o ürünün
+GitHub notları mevcut sürüme kadar geriye çekilir (1 saat bellekte tutulur), temizlenip özet modeline bağlam olarak verilir.
+Örn. "WAV desteği hangi sürümde geldi, hangi sürüme geçmeliyiz?". Route timeout'u 5 dk (cevap ~10-30 sn).
 
 ## Veri ve saklama
 Tek SQLite dosyası: `DB_PATH` (imajda `/data/releases.db`, OpenShift'te `release-summarizer-data` PVC).

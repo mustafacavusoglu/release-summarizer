@@ -1,0 +1,13 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: release-summarizer
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: release-summarizer
+spec:
+  source: {type: Binary}
+  strategy: {type: Docker}
+  output: {to: {kind: ImageStreamTag, name: "release-summarizer:latest"}}

@@ -5,87 +5,131 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Release Summarizer</title>
 <script>
-  try { document.documentElement.dataset.theme = localStorage.getItem("theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); }
+  try { document.documentElement.dataset.theme = localStorage.getItem("theme") || "light"; }
   catch { document.documentElement.dataset.theme = "light"; }
 </script>
 <style>
 :root {
-  --bg: #f5f5f4; --panel: #ffffff; --text: #1c1c1c; --muted: #6b6b6b; --line: #e2e2e0; --hover: #f0f0ee;
-  --accent: #2f5d8a; --accent-soft: #e8eef4; --on-accent: #ffffff;
-  --high: #b42318; --high-soft: #fbeceb; --med: #9a5b00; --med-soft: #f8f0e3; --low: #2e6b45; --low-soft: #e9f2ec;
+  --bg: #f6f7f9; --panel: #ffffff; --side: #fbfbfc; --text: #16181d; --muted: #667085; --line: #e4e7ec; --hover: #f2f4f7;
+  --accent: #2f5d8a; --accent-soft: #eaf1f8; --on-accent: #ffffff; --shadow: 0 12px 32px rgba(16, 24, 40, .14);
+  --high: #b42318; --high-soft: #fdecea; --med: #9a5b00; --med-soft: #fbf1e1; --low: #2e6b45; --low-soft: #e8f3ec;
   color-scheme: light;
 }
 :root[data-theme="dark"] {
-  --bg: #161616; --panel: #1e1e1e; --text: #e4e4e2; --muted: #9a9a96; --line: #2e2e2c; --hover: #252525;
-  --accent: #8aaed3; --accent-soft: #24303b; --on-accent: #161616;
-  --high: #e5847b; --high-soft: #3a2220; --med: #d8a85e; --med-soft: #352a1a; --low: #86bb98; --low-soft: #1f3026;
+  --bg: #121315; --panel: #1b1c1f; --side: #17181a; --text: #e6e6e3; --muted: #9a9b97; --line: #2b2c30; --hover: #232428;
+  --accent: #8aaed3; --accent-soft: #223040; --on-accent: #121315; --shadow: 0 12px 32px rgba(0, 0, 0, .5);
+  --high: #ee8b82; --high-soft: #3a2220; --med: #dcae64; --med-soft: #352a1a; --low: #86bb98; --low-soft: #1f3026;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
+html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
-button { font: inherit; cursor: pointer; }
-button:focus-visible, input:focus-visible, summary:focus-visible, .rel-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button { font: inherit; cursor: pointer; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num { font-variant-numeric: tabular-nums; }
 
-header { position: sticky; top: 0; z-index: 10; background: var(--panel); border-bottom: 1px solid var(--line); }
-.bar { max-width: 1200px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.logo { font-weight: 700; font-size: 16px; margin-right: auto; }
-.ver-tag { font-weight: 400; font-size: 12px; color: var(--muted); }
-.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 6px; font-size: 12px; border: 1px solid var(--line); color: var(--muted); }
-.pill.ok::before, .pill.warn::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--low); }
-.pill.warn::before { background: var(--med); }
-.btn { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 6px; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; }
+/* Düzen: sol sidebar + içerik */
+.app { display: grid; grid-template-columns: 264px 1fr; min-height: 100%; }
+.side { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; background: var(--side); border-right: 1px solid var(--line); }
+.brand { display: flex; align-items: baseline; gap: 6px; padding: 18px 18px 14px; font-weight: 700; font-size: 15px; }
+.brand small { font-weight: 400; color: var(--muted); font-size: 12px; }
+.nav { flex: 1; overflow: auto; padding: 0 10px 12px; }
+.nav-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 14px 8px 6px; }
+.nav-item { width: 100%; display: grid; grid-template-columns: 10px 1fr auto; gap: 2px 10px; align-items: center; text-align: left; border: 0; background: none; border-radius: 8px; padding: 8px; }
+.nav-item:hover { background: var(--hover); }
+.nav-item.on { background: var(--accent-soft); }
+.nav-item .nm { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-item .sub { grid-column: 2 / 4; font-size: 12px; color: var(--muted); }
+.nav-item.home { grid-template-columns: 10px 1fr auto; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.dot.low { background: var(--low); } .dot.medium { background: var(--med); } .dot.high { background: var(--high); }
+.count { font-size: 11px; font-weight: 600; background: var(--accent); color: var(--on-accent); border-radius: 10px; padding: 0 7px; }
+.side-foot { border-top: 1px solid var(--line); padding: 12px 18px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }
+.side-foot .row { display: flex; align-items: center; gap: 8px; }
+.side-foot .row .dot { flex: none; }
+
+.main { min-width: 0; display: flex; flex-direction: column; }
+.topbar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px; padding: 12px 28px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+.topbar h1 { margin: 0; font-size: 18px; font-weight: 600; }
+.topbar .sub { color: var(--muted); font-size: 13px; }
+.topbar .grow { flex: 1; min-width: 0; }
+.content { padding: 24px 28px 96px; max-width: 1180px; width: 100%; }
+
+.btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 7px 12px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .btn:hover { background: var(--hover); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.btn.primary:hover { opacity: .9; }
-.btn.icon { padding: 6px 9px; }
+.btn.primary:hover { opacity: .92; }
+.btn.ghost { border-color: transparent; background: none; }
+.btn.ghost:hover { background: var(--hover); }
+.btn.sm { padding: 4px 10px; font-size: 13px; }
+.btn.icon { padding: 7px 10px; }
 .btn:disabled { opacity: .6; cursor: default; }
-.spin { width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+.spin { width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; flex: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.status { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.only-mobile { display: none; }
 
-main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 60px; }
-.products { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin-bottom: 24px; }
-.pcard { position: relative; text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; color: var(--text); }
-.pcard:hover { background: var(--hover); }
-.pcard.active { border-color: var(--accent); background: var(--accent-soft); }
-.pcard .name { font-size: 12px; color: var(--muted); }
-.pcard .ver { font-size: 17px; font-weight: 600; margin: 2px 0; font-variant-numeric: tabular-nums; }
-.pcard .meta { font-size: 11px; color: var(--muted); }
-.pcard .meta.err { color: var(--high); }
-.pcard .meta.prev { font-variant-numeric: tabular-nums; margin-bottom: 2px; }
+.chip { font-size: 11px; padding: 1px 7px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.urg { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 4px; white-space: nowrap; }
+.urg.high { background: var(--high-soft); color: var(--high); }
+.urg.medium { background: var(--med-soft); color: var(--med); }
+.urg.low { background: var(--low-soft); color: var(--low); }
 .rc { font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 4px; border: 1px solid var(--med); color: var(--med); }
-.badge { position: absolute; top: 9px; right: 10px; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 600; border-radius: 4px; padding: 0 6px; }
 
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.section-title { font-size: 13px; font-weight: 600; margin: 0 0 10px; color: var(--muted); }
+
+/* Genel bakış */
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+.tile { padding: 14px 16px; }
+.tile .k { font-size: 12px; color: var(--muted); }
+.tile .v { font-size: 24px; font-weight: 600; margin-top: 2px; }
+.tile .v small { font-size: 14px; color: var(--muted); font-weight: 400; }
+.tile.warn .v { color: var(--med); } .tile.bad .v { color: var(--high); }
+.table-wrap { overflow-x: auto; margin-bottom: 28px; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 12px; font-weight: 500; color: var(--muted); padding: 10px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 10px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--hover); }
+td .flags { display: inline-flex; gap: 4px; }
+
+/* Ürün başlığı */
+.phead { padding: 18px 20px; margin-bottom: 28px; display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: start; }
+.phead .src { font-size: 12px; color: var(--muted); }
+.vers { display: flex; gap: 28px; flex-wrap: wrap; margin-top: 12px; }
+.vers .k { font-size: 12px; color: var(--muted); }
+.vers .v { font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.vers .arrow { color: var(--muted); align-self: flex-end; padding-bottom: 2px; }
+.phead .acts { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* Akış */
 .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
-.toolbar h2 { margin: 0 auto 0 0; font-size: 15px; font-weight: 600; }
-.search { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 6px; padding: 6px 10px; min-width: 220px; }
-.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-.seg button { border: 0; background: var(--panel); color: var(--muted); padding: 6px 12px; }
+.toolbar h3 { margin: 0 auto 0 0; font-size: 15px; font-weight: 600; }
+.search { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 8px; padding: 6px 10px; min-width: 220px; font: inherit; }
+.seg { display: inline-flex; max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.seg button { flex: none; border: 0; background: none; color: var(--muted); padding: 6px 11px; font-size: 13px; }
 .seg button + button { border-left: 1px solid var(--line); }
 .seg button.on { background: var(--accent-soft); color: var(--text); font-weight: 600; }
-
 .feed { display: flex; flex-direction: column; gap: 8px; }
-.rel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.rel { overflow: hidden; }
 .rel.unseen { border-left: 3px solid var(--accent); }
-.rel-head { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; cursor: pointer; }
+.rel-head { display: flex; gap: 10px; align-items: flex-start; padding: 12px 16px; cursor: pointer; }
 .rel-head:hover { background: var(--hover); }
 .rel-main { flex: 1; min-width: 0; }
 .rel-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.chip { font-size: 11px; padding: 1px 7px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
-.tag { font-weight: 600; font-size: 15px; font-variant-numeric: tabular-nums; }
+.tag { font-weight: 600; font-size: 15px; }
 .new { font-size: 10px; font-weight: 700; color: var(--accent); letter-spacing: .05em; }
 .when { color: var(--muted); font-size: 12px; margin-left: auto; white-space: nowrap; }
 .tldr { margin-top: 3px; }
 .tldr.muted { color: var(--muted); font-style: italic; }
-.urg { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 4px; }
-.urg.high { background: var(--high-soft); color: var(--high); }
-.urg.medium { background: var(--med-soft); color: var(--med); }
-.urg.low { background: var(--low-soft); color: var(--low); }
-.chev { color: var(--muted); font-size: 11px; margin-top: 4px; width: 10px; }
+.chev { color: var(--muted); font-size: 10px; margin-top: 5px; width: 10px; transition: transform .15s; }
 .rel.open .chev { transform: rotate(90deg); }
-.rel-body { display: none; padding: 0 14px 14px 34px; border-top: 1px solid var(--line); }
+.rel-body { display: none; padding: 0 16px 16px 36px; border-top: 1px solid var(--line); }
 .rel.open .rel-body { display: block; }
 .sec { margin-top: 12px; }
 .sec h4 { margin: 0 0 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
@@ -97,42 +141,122 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 60px; }
 .actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 details.raw { margin-top: 12px; }
 details.raw summary { cursor: pointer; color: var(--muted); font-size: 13px; }
-details.raw pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 12px; max-height: 420px; overflow: auto; }
+details.raw pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px; max-height: 420px; overflow: auto; }
 .errbox { color: var(--high); font-size: 13px; }
-.empty { text-align: center; color: var(--muted); padding: 60px 20px; }
+.empty { text-align: center; color: var(--muted); padding: 48px 20px; }
 
-#toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 6px; font-size: 13px; display: none; }
+/* Sohbet: sağ alttan açılan çekmece */
+.fab { position: fixed; right: 24px; bottom: 24px; z-index: 20; border: 0; border-radius: 24px; padding: 12px 18px; background: var(--accent); color: var(--on-accent); font-weight: 600; box-shadow: var(--shadow); display: inline-flex; align-items: center; gap: 8px; }
+.fab:hover { opacity: .94; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 30; width: min(460px, 100%); display: flex; flex-direction: column; background: var(--panel); border-left: 1px solid var(--line); box-shadow: var(--shadow); }
+.dr-head { padding: 14px 16px 12px; border-bottom: 1px solid var(--line); }
+.dr-title { display: flex; align-items: center; gap: 8px; }
+.dr-title h2 { margin: 0 auto 0 0; font-size: 15px; }
+.dr-ctx { display: grid; grid-template-columns: 1fr 130px; gap: 8px; margin-top: 10px; }
+.dr-ctx label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); }
+.dr-ctx select, .dr-ctx input, .ask textarea { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 8px; padding: 6px 9px; width: 100%; }
+.log { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.msg { padding: 9px 12px; border-radius: 10px; white-space: pre-wrap; word-break: break-word; max-width: 92%; font-size: 13.5px; }
+.msg.user { align-self: flex-end; background: var(--accent); color: var(--on-accent); }
+.msg.assistant { align-self: flex-start; background: var(--bg); border: 1px solid var(--line); }
+.msg.err { color: var(--high); }
+.msg .meta { font-size: 11px; color: var(--muted); margin-top: 6px; }
+.msg code { font-size: 12px; background: var(--hover); padding: 0 4px; border-radius: 4px; }
+.intro { color: var(--muted); font-size: 13px; }
+.intro b { color: var(--text); }
+.sugg { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.sugg button { text-align: left; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+.sugg button:hover { border-color: var(--accent); background: var(--accent-soft); }
+.ask { display: flex; gap: 8px; padding: 12px 16px 16px; border-top: 1px solid var(--line); }
+.ask textarea { flex: 1; resize: none; min-height: 42px; max-height: 160px; }
+.hint { font-size: 11px; color: var(--muted); padding: 0 16px 10px; margin-top: -8px; }
+.backdrop { display: none; }
+
+#toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 40; background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; display: none; }
 #toast.show { display: block; }
-@media (max-width: 600px) { .search { min-width: 0; flex: 1; } .when { margin-left: 0; } .rel-body { padding-left: 14px; } }
+
+@media (min-width: 1280px) { .app.chat-open { margin-right: min(460px, 100%); } }
+@media (max-width: 1100px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 900px) {
+  .app { grid-template-columns: 1fr; }
+  .side { position: fixed; z-index: 25; left: 0; width: 280px; transform: translateX(-100%); transition: transform .2s; box-shadow: var(--shadow); }
+  .app.nav-open .side { transform: none; }
+  .app.nav-open .backdrop { display: block; position: fixed; inset: 0; z-index: 24; background: rgba(0, 0, 0, .3); }
+  .only-mobile { display: inline-flex; }
+  .topbar { padding: 10px 16px; }
+  .topbar .lbl { display: none; }
+  .content { padding: 16px 16px 96px; }
+  .phead { grid-template-columns: 1fr; }
+  .phead .acts { justify-content: flex-start; }
+  .search { min-width: 0; flex: 1; }
+  .rel-body { padding-left: 16px; }
+  .when { margin-left: 0; }
+  .fab { right: 16px; bottom: 16px; }
+}
+@media (max-width: 520px) { .tiles { grid-template-columns: 1fr 1fr; gap: 8px; } .tile .v { font-size: 20px; } .fab .lbl { display: none; } }
 </style>
 </head>
 <body>
-<header>
-  <div class="bar">
-    <div class="logo">Release Summarizer <span id="ver" class="ver-tag"></span></div>
-    <span id="llm" class="pill">…</span>
-    <span id="next" class="pill"></span>
-    <span id="status" class="pill" hidden></span>
-    <button id="markAll" class="btn" title="Tümünü okundu işaretle">✓ Tümü okundu</button>
-    <button id="themeBtn" class="btn icon" aria-label="Tema değiştir"></button>
-    <button id="checkBtn" class="btn primary">↻ Şimdi kontrol et</button>
-  </div>
-</header>
+<div id="app" class="app">
+  <aside class="side" aria-label="Ürünler">
+    <div class="brand">Release Summarizer <small id="ver"></small></div>
+    <nav id="nav" class="nav"></nav>
+    <div class="side-foot">
+      <div class="row" id="llm"></div>
+      <div class="row" id="next"></div>
+      <div class="row"><button id="themeBtn" class="btn ghost sm" style="margin-left:-10px"></button></div>
+    </div>
+  </aside>
+  <div class="backdrop" id="backdrop"></div>
 
-<main>
-  <div id="products" class="products"></div>
-  <div class="toolbar">
-    <h2 id="feedTitle">Son güncellemeler</h2>
-    <input id="q" class="search" type="search" placeholder="Ara…  (/)" aria-label="Release ara">
-    <div class="seg" role="group" aria-label="Filtre">
-      <button data-f="all" class="on">Tümü</button>
-      <button data-f="unseen">Okunmamış</button>
-      <button data-f="important">Önemli</button>
-      <button data-f="rc">RC</button>
+  <div class="main">
+    <header class="topbar">
+      <button id="menuBtn" class="btn icon only-mobile" aria-label="Ürün menüsü">☰</button>
+      <div class="grow"><h1 id="title">Genel bakış</h1></div>
+      <span id="status" class="status" hidden></span>
+      <button id="markAll" class="btn" title="Okundu işaretle">✓ <span class="lbl">Okundu işaretle</span></button>
+      <button id="checkBtn" class="btn primary"></button>
+    </header>
+
+    <main class="content">
+      <section id="hero"></section>
+      <div class="toolbar">
+        <h3>Sürüm akışı</h3>
+        <input id="q" class="search" type="search" placeholder="Ara…  (/)" aria-label="Release ara">
+        <div class="seg" role="group" aria-label="Filtre">
+          <button data-f="all" class="on">Tümü</button>
+          <button data-f="unseen">Okunmamış</button>
+          <button data-f="important">Önemli</button>
+          <button data-f="newer" title="Kullandığımız sürümden yeni olanlar">Bizden yeni</button>
+          <button data-f="rc">RC</button>
+        </div>
+      </div>
+      <div id="feed" class="feed"><div class="empty">Yükleniyor…</div></div>
+    </main>
+  </div>
+</div>
+
+<button id="fab" class="fab" aria-controls="drawer" aria-expanded="false">💬 <span class="lbl">Sürüm notlarına sor</span></button>
+
+<aside id="drawer" class="drawer" aria-label="Sürüm asistanı" hidden>
+  <div class="dr-head">
+    <div class="dr-title">
+      <h2>Sürüm asistanı</h2>
+      <button id="chatClear" class="btn ghost sm" title="Bu ürünün konuşmasını temizle">Temizle</button>
+      <button id="chatClose" class="btn ghost sm" aria-label="Kapat">✕</button>
+    </div>
+    <div class="dr-ctx">
+      <label>Ürün<select id="chatProduct"></select></label>
+      <label>Mevcut sürüm<input id="chatCurrent" placeholder="ör. 1.98" class="num"></label>
     </div>
   </div>
-  <div id="feed" class="feed"><div class="empty">Yükleniyor…</div></div>
-</main>
+  <div id="log" class="log" aria-live="polite"></div>
+  <form id="askForm" class="ask">
+    <textarea id="askInput" rows="1" placeholder="Bir şey sor…" aria-label="Soru"></textarea>
+    <button id="askBtn" class="btn primary" aria-label="Gönder">➤</button>
+  </form>
+  <div class="hint">Enter gönderir, Shift+Enter yeni satır. Cevaplar sürüm notlarına dayanır.</div>
+</aside>
 <div id="toast" role="status"></div>
 
 <script>
@@ -141,6 +265,30 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const rtf = new Intl.RelativeTimeFormat("tr", { numeric: "auto" });
 const URG = { high: "Yüksek", medium: "Orta", low: "Düşük" };
 let S = { state: null, releases: [], product: null, filter: "all", q: "", open: new Set() };
+const chats = {};  // ürün -> mesajlar; ürün değişince konuşma kaybolmaz
+
+// Python versions.vkey ile aynı: 1.106.0-rc.2 < 1.106.0 < 1.106.1
+const vparse = t => { const m = /^v?(\d+(?:\.\d+)+)(?:-?rc\.?(\d+))?$/i.exec(t || ""); return m && [m[1].split(".").map(Number), m[2] == null ? 1 : 0, +(m[2] || 0)]; };
+function vcmp(a, b) {
+  const x = vparse(a), y = vparse(b); if (!x || !y) return 0;
+  for (let i = 0; i < Math.max(x[0].length, y[0].length); i++) { const d = (x[0][i] ?? -1) - (y[0][i] ?? -1); if (d) return d; }
+  return x[1] - y[1] || x[2] - y[2];
+}
+const product = id => S.state?.products.find(p => p.id === id);
+const isRc = t => /rc\.?\d+$/i.test(t);
+const newerThanUsed = r => { const i = product(r.product)?.installed; return !!i && vcmp(r.tag, i) > 0; };
+function gap(p) {  // kullanılan sürüm, son stable'ın kaç major/minor/patch gerisinde
+  const a = vparse(p.installed)?.[0], b = vparse(p.stable[0])?.[0];
+  if (!a || !b) return null;
+  for (const [i, n, lvl] of [[0, "major", "high"], [1, "minor", "medium"], [2, "patch", "low"]]) {
+    const d = (b[i] || 0) - (a[i] || 0);
+    if (d > 0) return { level: lvl, text: `${d} ${n} geride` };
+    if (d < 0) break;
+  }
+  return { level: "low", text: "Güncel", ok: true };
+}
+const securityAhead = p => S.releases.some(r => r.product === p.id && newerThanUsed(r) && r.summary?.security?.length);
+const level = p => securityAhead(p) ? "high" : gap(p)?.level || "";
 
 function ago(iso) {
   if (!iso) return "—";
@@ -159,66 +307,121 @@ async function api(path, method = "GET") {
   return r.json();
 }
 
-function renderHeader() {
-  const st = S.state, llm = $("#llm");
+/* ---------- Sidebar ---------- */
+function renderSide() {
+  const st = S.state, unseen = st.products.reduce((a, p) => a + (p.unseen || 0), 0);
   $("#ver").textContent = "v" + st.version;
-  const sc = st.schedule, nx = $("#next");
-  nx.textContent = "Sonraki kontrol: " + new Date(sc.next).toLocaleString("tr-TR", { timeZone: sc.timezone, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-  nx.title = `Cron: ${sc.cron} (${sc.timezone})`;
-  nx.hidden = st.running;
-  llm.className = "pill " + (st.llm.configured ? "ok" : "warn");
-  llm.textContent = st.llm.configured ? st.llm.model : "LLM yapılandırılmadı";
-  const status = $("#status"), btn = $("#checkBtn");
+  $("#nav").innerHTML = `
+    <button class="nav-item home ${S.product ? "" : "on"}" data-p="">
+      <span>▦</span><span class="nm">Genel bakış</span>${unseen ? `<span class="count">${unseen}</span>` : "<span></span>"}
+    </button>
+    <div class="nav-label">Ürünler</div>
+    ${st.products.map(p => { const g = gap(p), sec = securityAhead(p); return `
+    <button class="nav-item ${S.product === p.id ? "on" : ""}" data-p="${p.id}"
+      title="${esc(p.error ? "Kontrol hatası: " + p.error : (g ? g.text : "") + (sec ? " · güvenlik düzeltmesi var" : ""))}">
+      <span class="dot ${level(p)}"></span>
+      <span class="nm">${esc(p.name)}</span>
+      ${p.unseen ? `<span class="count">${p.unseen}</span>` : p.error ? '<span class="urg high">!</span>' : "<span></span>"}
+      <span class="sub num">${p.installed ? `${esc(p.installed)} → ${esc(p.stable[0] || "—")}` : esc(p.stable[0] || "—")}</span>
+    </button>`; }).join("")}`;
+  const sc = st.schedule;
+  $("#llm").innerHTML = `<span class="dot ${st.llm.configured ? "low" : "medium"}"></span>${esc(st.llm.configured ? st.llm.model : "LLM yapılandırılmadı")}`;
+  $("#next").innerHTML = `<span>⏱</span>Sonraki kontrol ${new Date(sc.next).toLocaleString("tr-TR", { timeZone: sc.timezone, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`;
+  $("#next").title = `Cron: ${sc.cron} (${sc.timezone})`;
+  document.title = unseen ? `(${unseen}) Release Summarizer` : "Release Summarizer";
+}
+
+/* ---------- Üst bar ---------- */
+function renderTop() {
+  const st = S.state, p = product(S.product), status = $("#status"), btn = $("#checkBtn");
+  $("#title").textContent = p ? p.name : "Genel bakış";
   status.hidden = !(st.running || (st.pending && st.llm.configured));
-  status.innerHTML = st.running
-    ? `<span class="spin"></span> ${st.pending ? st.pending + " özet hazırlanıyor" : "Kontrol ediliyor"}`
-    : `${st.pending} özet bekliyor`;
+  status.innerHTML = st.running ? `<span class="spin"></span>${st.pending ? st.pending + " özet hazırlanıyor" : "Kontrol ediliyor"}` : `${st.pending} özet bekliyor`;
   btn.disabled = st.running;
-  btn.innerHTML = st.running ? '<span class="spin"></span> Çalışıyor' : "↻ Şimdi kontrol et";
-  const total = st.products.reduce((a, p) => a + (p.unseen || 0), 0);
-  document.title = total ? `(${total}) Release Summarizer` : "Release Summarizer";
+  $("#markAll").hidden = !(p ? p.unseen : st.products.some(x => x.unseen));
+  btn.innerHTML = st.running ? '<span class="spin"></span>' : `↻ <span class="lbl">${p ? "Kontrol et" : "Şimdi kontrol et"}</span>`;
 }
 
-function renderProducts() {
-  $("#products").innerHTML = S.state.products.map(p => `
-    <button class="pcard ${S.product === p.id ? "active" : ""}" data-p="${p.id}" title="${esc(p.error || "Kaynak: " + p.source)}">
-      ${p.unseen ? `<span class="badge">${p.unseen}</span>` : ""}
-      <div class="name">${esc(p.name)}</div>
-      <div class="ver">${esc(p.stable[0] || "—")}</div>
-      ${p.stable.length > 1 ? `<div class="meta prev">n-1 ${esc(p.stable[1])}${p.stable[2] ? ` · n-2 ${esc(p.stable[2])}` : ""}</div>` : ""}
-      ${p.rc ? `<div class="meta"><span class="rc">RC</span> ${esc(p.rc)}</div>` : ""}
-      <div class="meta ${p.error ? "err" : ""}">${p.error ? "⚠ Kontrol hatası" : "Kontrol: " + ago(p.checked_at)}</div>
-    </button>`).join("");
+/* ---------- Genel bakış / ürün başlığı ---------- */
+const flags = p => {
+  const g = gap(p);
+  return `${g ? `<span class="urg ${g.level}">${g.ok ? "✓ " : ""}${g.text}</span>` : ""}${securityAhead(p) ? '<span class="urg high" title="Kullandığımızdan yeni bir sürümde güvenlik düzeltmesi var">⚠ Güvenlik</span>' : ""}`;
+};
+function renderHero() {
+  const st = S.state, p = product(S.product);
+  if (p) {
+    $("#hero").innerHTML = `
+    <div class="card phead">
+      <div>
+        <div class="src"><a href="${esc(p.source)}" target="_blank" rel="noopener">${esc(p.source.replace(/^https:\/\//, ""))} ↗</a> · Kontrol ${ago(p.checked_at)}</div>
+        ${p.error ? `<div class="errbox" style="margin-top:8px">⚠ ${esc(p.error)}</div>` : ""}
+        <div class="vers">
+          ${p.installed ? `<div><div class="k">Kullanılan</div><div class="v num">${esc(p.installed)}</div></div><div class="arrow">→</div>` : ""}
+          <div><div class="k">Son stable</div><div class="v num">${esc(p.stable[0] || "—")} <span class="flags">${flags(p)}</span></div></div>
+          ${p.stable.length > 1 ? `<div><div class="k">Önceki</div><div class="v num" style="font-weight:400;font-size:14px">${p.stable.slice(1).map(esc).join(" · ")}</div></div>` : ""}
+          ${p.rc ? `<div><div class="k">Aday</div><div class="v num" style="font-weight:400;font-size:14px"><span class="rc">RC</span>${esc(p.rc)}</div></div>` : ""}
+        </div>
+      </div>
+      <div class="acts"><button class="btn primary" data-ask="">💬 Bu ürüne sor</button></div>
+    </div>`;
+    return;
+  }
+  const used = st.products.filter(p => p.installed), behind = used.filter(p => gap(p) && !gap(p).ok);
+  const sec = st.products.filter(securityAhead), unseen = st.products.reduce((a, p) => a + (p.unseen || 0), 0);
+  const last = st.products.map(p => p.checked_at).filter(Boolean).sort().pop();
+  $("#hero").innerHTML = `
+    <div class="tiles">
+      <div class="card tile ${behind.length ? "warn" : ""}"><div class="k">Güncel olmayan</div><div class="v num">${behind.length}<small> / ${used.length}</small></div></div>
+      <div class="card tile ${sec.length ? "bad" : ""}"><div class="k">Bekleyen güvenlik düzeltmesi</div><div class="v num">${sec.length}<small> ürün</small></div></div>
+      <div class="card tile"><div class="k">Okunmamış sürüm</div><div class="v num">${unseen}</div></div>
+      <div class="card tile"><div class="k">Son kontrol</div><div class="v" style="font-size:18px;margin-top:6px">${ago(last)}</div></div>
+    </div>
+    <h3 class="section-title">Sürüm durumu</h3>
+    <div class="card table-wrap">
+      <table>
+        <thead><tr><th>Ürün</th><th>Kullanılan</th><th>Son stable</th><th>Durum</th><th>Aday (RC)</th></tr></thead>
+        <tbody>${[...st.products].sort((a, b) => ({ high: 0, medium: 1, low: 2 }[level(a)] ?? 3) - ({ high: 0, medium: 1, low: 2 }[level(b)] ?? 3)).map(p => `
+          <tr data-p="${p.id}">
+            <td><span class="dot ${level(p)}" style="display:inline-block;margin-right:8px"></span>${esc(p.name)}</td>
+            <td class="num">${esc(p.installed || "—")}</td>
+            <td class="num">${esc(p.stable[0] || "—")}</td>
+            <td><span class="flags">${flags(p) || (p.error ? '<span class="urg high">Kontrol hatası</span>' : "—")}</span></td>
+            <td class="num">${p.rc ? esc(p.rc) : "—"}</td>
+          </tr>`).join("")}</tbody>
+      </table>
+    </div>`;
 }
 
+/* ---------- Akış ---------- */
 function visible() {
   const q = S.q.toLowerCase();
   return S.releases.filter(r =>
     (!S.product || r.product === S.product) &&
     (S.filter !== "unseen" || !r.seen) &&
     (S.filter !== "important" || ["high", "medium"].includes(r.summary?.urgency)) &&
-    (S.filter !== "rc" || /rc\.?\d+$/i.test(r.tag)) &&
+    (S.filter !== "rc" || isRc(r.tag)) &&
+    (S.filter !== "newer" || newerThanUsed(r)) &&
     (!q || [r.tag, r.title, r.product, r.summary?.tldr, ...(r.summary?.highlights || [])].join(" ").toLowerCase().includes(q)));
 }
-
 const list = (cls, title, items) => items?.length
   ? `<div class="sec ${cls}"><h4>${title}</h4><ul>${items.map(i => `<li>${esc(i)}</li>`).join("")}</ul></div>` : "";
 
 function relHTML(r) {
-  const key = r.product + "@" + r.tag, s = r.summary, name = S.state.products.find(p => p.id === r.product)?.name || r.product;
+  const key = r.product + "@" + r.tag, s = r.summary, p = product(r.product);
   const tldr = !s ? (S.state.llm.configured ? '<div class="tldr muted">Özet hazırlanıyor…</div>' : '<div class="tldr muted">Özet yok (LLM yapılandırılmadı)</div>')
     : s.error ? '<div class="tldr muted">Özet alınamadı</div>'
     : `<div class="tldr">${esc(s.tldr)}</div>`;
   return `
-  <article class="rel ${r.seen ? "" : "unseen"} ${S.open.has(key) ? "open" : ""}" data-key="${esc(key)}">
+  <article class="card rel ${r.seen ? "" : "unseen"} ${S.open.has(key) ? "open" : ""}" data-key="${esc(key)}">
     <div class="rel-head" tabindex="0" role="button" aria-expanded="${S.open.has(key)}">
       <span class="chev">▶</span>
       <div class="rel-main">
         <div class="rel-title">
-          <span class="chip">${esc(name)}</span>
-          <span class="tag">${esc(r.tag)}</span>
-          ${/rc\.?\d+$/i.test(r.tag) ? '<span class="rc" title="Release candidate: stable öncesi aday sürüm">RC</span>' : ""}
+          ${S.product ? "" : `<span class="chip">${esc(p?.name || r.product)}</span>`}
+          <span class="tag num">${esc(r.tag)}</span>
+          ${isRc(r.tag) ? '<span class="rc" title="Release candidate: stable öncesi aday sürüm">RC</span>' : ""}
           ${s?.urgency in URG ? `<span class="urg ${s.urgency}">${URG[s.urgency]}</span>` : ""}
+          ${p?.installed && !vcmp(r.tag, p.installed) ? '<span class="chip" title="Şu an kullandığımız sürüm">Kullanılan</span>' : ""}
           ${r.seen ? "" : '<span class="new">YENİ</span>'}
           <span class="when" title="${esc(r.published)}">${ago(r.published)}</span>
         </div>
@@ -233,21 +436,21 @@ function relHTML(r) {
       ${s?.urgency_reason ? `<div class="reason">Aciliyet: ${esc(s.urgency_reason)}</div>` : ""}
       <details class="raw"><summary>Orijinal sürüm notları</summary><pre>${esc(r.body || "(boş)")}</pre></details>
       <div class="actions">
-        <a class="btn" href="${esc(r.url)}" target="_blank" rel="noopener">Kaynağa git ↗</a>
-        ${S.state.llm.configured ? `<button class="btn" data-resum="${esc(key)}">Yeniden özetle</button>` : ""}
+        ${S.state.llm.configured ? `<button class="btn sm primary" data-ask="${esc(key)}">💬 Bu sürümü sor</button>` : ""}
+        <a class="btn sm" href="${esc(r.url)}" target="_blank" rel="noopener">Kaynağa git ↗</a>
+        ${S.state.llm.configured ? `<button class="btn sm" data-resum="${esc(key)}">Yeniden özetle</button>` : ""}
       </div>
     </div>
   </article>`;
 }
 
 function renderFeed() {
-  const v = visible(), p = S.state.products.find(p => p.id === S.product);
-  $("#feedTitle").textContent = p ? `${p.name} sürümleri` : "Son güncellemeler";
+  const v = visible();
   $("#feed").innerHTML = v.length ? v.map(relHTML).join("")
     : `<div class="empty">${S.releases.length ? "Bu filtreye uyan sürüm yok." : "Henüz veri yok — ilk kontrol çalışıyor olabilir."}</div>`;
 }
 
-function render() { renderHeader(); renderProducts(); renderFeed(); }
+function render() { renderSide(); renderTop(); renderHero(); renderFeed(); renderChatProducts(); }
 
 async function refresh() {
   try {
@@ -258,15 +461,30 @@ async function refresh() {
   refresh.t = setTimeout(refresh, S.state?.running ? 3000 : 60000);
 }
 
+function selectProduct(id) {
+  S.product = id || null;
+  $("#app").classList.remove("nav-open");
+  renderSide(); renderTop(); renderHero(); renderFeed();
+  if (S.product && $("#drawer").hidden) setChatProduct(S.product);
+  scrollTo({ top: 0 });
+}
+
 const findRel = key => S.releases.find(r => r.product + "@" + r.tag === key);
 
-$("#products").addEventListener("click", e => {
-  const c = e.target.closest(".pcard"); if (!c) return;
-  S.product = S.product === c.dataset.p ? null : c.dataset.p;
-  renderProducts(); renderFeed();
+$("#nav").addEventListener("click", e => { const b = e.target.closest("[data-p]"); if (b) selectProduct(b.dataset.p); });
+$("#hero").addEventListener("click", e => {
+  if (e.target.closest("[data-ask]")) return openChat(S.product);
+  const tr = e.target.closest("tr[data-p]"); if (tr) selectProduct(tr.dataset.p);
 });
+$("#menuBtn").addEventListener("click", () => $("#app").classList.add("nav-open"));
+$("#backdrop").addEventListener("click", () => $("#app").classList.remove("nav-open"));
 
 $("#feed").addEventListener("click", async e => {
+  const ask = e.target.closest("[data-ask]");
+  if (ask) {
+    const r = findRel(ask.dataset.ask);
+    return openChat(r.product, `${r.tag} sürümünde neler değişti, bize etkisi ne olur? Geçmeli miyiz?`);
+  }
   const resum = e.target.closest("[data-resum]");
   if (resum) {
     const r = findRel(resum.dataset.resum);
@@ -282,9 +500,9 @@ $("#feed").addEventListener("click", async e => {
   S.open.has(key) ? S.open.delete(key) : S.open.add(key);
   if (!r.seen) {
     r.seen = 1;
-    const p = S.state.products.find(p => p.id === r.product); if (p) p.unseen = Math.max(0, p.unseen - 1);
+    const p = product(r.product); if (p) p.unseen = Math.max(0, p.unseen - 1);
     api(`/api/seen?product=${encodeURIComponent(r.product)}&tag=${encodeURIComponent(r.tag)}`, "POST").catch(() => {});
-    renderHeader(); renderProducts();
+    renderSide(); if (!S.product) renderHero();
   }
   renderFeed();
 });
@@ -299,10 +517,6 @@ $(".seg").addEventListener("click", e => {
   renderFeed();
 });
 $("#q").addEventListener("input", e => { S.q = e.target.value; renderFeed(); });
-document.addEventListener("keydown", e => {
-  if (e.key === "/" && document.activeElement !== $("#q")) { e.preventDefault(); $("#q").focus(); }
-  if (e.key === "Escape") { $("#q").value = S.q = ""; $("#q").blur(); renderFeed(); }
-});
 
 $("#checkBtn").addEventListener("click", async () => {
   await api("/api/check" + (S.product ? "?product=" + S.product : ""), "POST");
@@ -314,10 +528,96 @@ $("#markAll").addEventListener("click", async () => {
   toast("Okundu olarak işaretlendi"); refresh();
 });
 
+/* ---------- Sohbet çekmecesi ---------- */
+// Seçili ürünün sürüm notları (mevcut sürümden yenisi) özet modeline bağlam olarak verilir
+const md = t => esc(t).replace(/^#+\s*(.+)$/gm, "<b>$1</b>").replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
+const chatPid = () => $("#chatProduct").value;
+const chatLog = () => chats[chatPid()] ??= [];
+
+function renderChatProducts() {
+  const sel = $("#chatProduct"), cur = sel.value || S.product || S.state.products[0]?.id, first = !sel.options.length;
+  sel.innerHTML = S.state.products.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
+  sel.value = cur;
+  if (first) { fillCurrent(); renderLog(); }
+}
+function fillCurrent() { $("#chatCurrent").value = product(chatPid())?.installed || ""; }
+function setChatProduct(id) { if (chatPid() !== id) { $("#chatProduct").value = id; fillCurrent(); renderLog(); } }
+
+function suggestions(p) {
+  return [
+    p.installed && p.stable[0] && `${p.installed} → ${p.stable[0]} geçişinde breaking change'ler neler?`,
+    p.installed ? `${p.installed} sürümünden sonra hangi güvenlik düzeltmeleri geldi?` : "Son sürümlerde hangi güvenlik düzeltmeleri geldi?",
+    "Hangi sürüme geçmemizi önerirsin, neden?",
+  ].filter(Boolean);
+}
+function renderLog(pending) {
+  const log = chatLog(), p = product(chatPid());
+  if (!log.length && !pending) {
+    $("#log").innerHTML = p ? `
+      <div class="intro">Soruların <b>${esc(p.name)}</b> sürüm notlarından cevaplanır${$("#chatCurrent").value ? `; <b class="num">${esc($("#chatCurrent").value)}</b> sonrasındaki tüm sürümler okunur` : ""}.
+        Örneğin "WAV formatı desteği hangi sürümde geldi?" ya da "şu hatayı çözen sürüm hangisi?" diye sorabilirsin.</div>
+      <div class="sugg">${suggestions(p).map(q => `<button type="button" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>` : "";
+    return;
+  }
+  $("#log").innerHTML = log.map(m => `<div class="msg ${m.role} ${m.err ? "err" : ""}">${m.role === "user" ? esc(m.content) : md(m.content)}${m.meta ? `<div class="meta">${esc(m.meta)}</div>` : ""}</div>`).join("")
+    + (pending ? '<div class="msg assistant"><span class="spin" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Sürüm notları okunuyor…</div>' : "");
+  $("#log").scrollTop = 1e9;
+}
+function openChat(pid, question) {
+  if (pid) setChatProduct(pid);
+  $("#drawer").hidden = false; $("#fab").hidden = true; $("#app").classList.add("chat-open"); $("#fab").setAttribute("aria-expanded", "true");
+  renderLog();
+  if (question) $("#askInput").value = question;
+  $("#askInput").focus();
+}
+function closeChat() {
+  $("#drawer").hidden = true; $("#fab").hidden = false; $("#app").classList.remove("chat-open"); $("#fab").setAttribute("aria-expanded", "false"); $("#fab").focus();
+}
+$("#fab").addEventListener("click", () => openChat(S.product));
+$("#chatClose").addEventListener("click", closeChat);
+$("#chatProduct").addEventListener("change", () => { fillCurrent(); renderLog(); });
+$("#chatCurrent").addEventListener("change", () => { chats[chatPid()] = []; renderLog(); });
+$("#chatClear").addEventListener("click", () => { chats[chatPid()] = []; renderLog(); });
+$("#log").addEventListener("click", e => {
+  const b = e.target.closest("[data-q]"); if (!b) return;
+  $("#askInput").value = b.dataset.q; $("#askForm").requestSubmit();
+});
+$("#askInput").addEventListener("input", e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + 2 + "px"; });
+$("#askInput").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("#askForm").requestSubmit(); }
+});
+$("#askForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const q = $("#askInput").value.trim(), pid = chatPid(), log = chatLog();
+  if (!q || $("#askBtn").disabled) return;
+  log.push({ role: "user", content: q });
+  $("#askInput").value = ""; $("#askInput").style.height = "";
+  $("#askBtn").disabled = true; renderLog(true);
+  try {
+    const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+      product: pid, current: $("#chatCurrent").value,
+      messages: log.filter(m => !m.err).map(({ role, content }) => ({ role, content })) }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : "İstek geçersiz");
+    log.push({ role: "assistant", content: d.answer, meta: `${d.releases} sürümün notu okundu${d.truncated ? " (notlar kısaltıldı)" : ""}` });
+  } catch (err) { log.push({ role: "assistant", content: "Cevap alınamadı: " + err.message, err: true }); }
+  $("#askBtn").disabled = false;
+  if (chatPid() === pid) renderLog();
+});
+
+/* ---------- Klavye, tema ---------- */
+document.addEventListener("keydown", e => {
+  const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName);
+  if (e.key === "/" && !typing) { e.preventDefault(); $("#q").focus(); }
+  if (e.key === "Escape") {
+    if (!$("#drawer").hidden) closeChat();
+    else if (document.activeElement === $("#q")) { $("#q").value = S.q = ""; $("#q").blur(); renderFeed(); }
+    $("#app").classList.remove("nav-open");
+  }
+});
 function setTheme(t) {
   document.documentElement.dataset.theme = t;
-  $("#themeBtn").textContent = t === "dark" ? "☀" : "☾";
-  $("#themeBtn").title = t === "dark" ? "Açık tema" : "Koyu tema";
+  $("#themeBtn").textContent = t === "dark" ? "☀ Açık tema" : "☾ Koyu tema";
 }
 $("#themeBtn").addEventListener("click", () => {
   const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark";

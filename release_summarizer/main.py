@@ -5,9 +5,11 @@ from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
 from . import db, service
-from .config import CHECK_CRON, CHECK_TZ, LLM_CONFIGURED, LLM_MODEL, PRODUCTS, RETENTION_PER_PRODUCT, VERSION
+from .config import CHECK_CRON, CHECK_TZ, INSTALLED, LLM_CONFIGURED, LLM_MODEL, PRODUCTS, RETENTION_PER_PRODUCT, VERSION
+from .versions import TAG
 
 
 @asynccontextmanager
@@ -34,7 +36,7 @@ def state():
         "running": service.lock.locked(), "pending": db.pending_count(),
         "retention": RETENTION_PER_PRODUCT,
         "schedule": {"cron": CHECK_CRON, "timezone": str(CHECK_TZ), "next": service.next_check().isoformat()},
-        "products": [{"id": pid, "name": p["name"], "source": p["source"], **products[pid]}
+        "products": [{"id": pid, "name": p["name"], "source": p["source"], "installed": INSTALLED.get(pid), **products[pid]}
                      for pid, p in PRODUCTS.items()],
     }
 
@@ -66,3 +68,29 @@ async def resummarize(product: str, tag: str):
     if summary is None:
         raise HTTPException(404, "Release bulunamadı")
     return summary
+
+
+class Message(BaseModel):
+    role: str = Field(pattern="^(user|assistant)$")
+    content: str = Field(max_length=8000)
+
+
+class ChatIn(BaseModel):
+    product: str
+    messages: list[Message] = Field(min_length=1)
+    current: str | None = None  # kullanıcının mevcut sürümü, ör. "1.98"
+
+
+@app.post("/api/chat")
+async def chat(body: ChatIn):
+    if not LLM_CONFIGURED:
+        raise HTTPException(400, "LLM yapılandırılmamış")
+    if body.product not in PRODUCTS:
+        raise HTTPException(404, "Bilinmeyen ürün")
+    current = (body.current or "").strip() or None
+    if current and not TAG.match(current):
+        raise HTTPException(400, "Sürüm biçimi geçersiz (ör. 1.98 veya v1.98.0)")
+    try:
+        return await service.chat(body.product, [m.model_dump() for m in body.messages[-10:]], current)
+    except Exception as e:
+        raise HTTPException(502, f"{type(e).__name__}: {e}"[:300])

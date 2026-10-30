@@ -1,0 +1,14 @@
+# Lokal deneme: OpenShift Local (crc, Apple Silicon → arm64). Hub imajı amd64 olduğundan imaj cluster'da build edilir.
+#   oc new-project release-summarizer
+#   oc create secret generic release-summarizer --from-literal=LLM_API_KEY=<key>
+#   oc apply -k openshift-crc && oc start-build release-summarizer --from-dir=. --follow
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: release-summarizer
+resources:
+  - ../openshift
+  - build.yaml
+images:
+  - name: docker.io/mustafa12/release-summarizer
+    newName: image-registry.openshift-image-registry.svc:5000/release-summarizer/release-summarizer
+    newTag: latest

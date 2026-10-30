@@ -4,7 +4,7 @@ os.environ["DB_PATH"] = tempfile.mktemp(suffix=".db")
 os.environ["RETENTION_PER_PRODUCT"] = "4"
 from release_summarizer.versions import TAG, vkey, is_rc, pick
 from release_summarizer.sources import parse_ocp
-from release_summarizer.llm import parse_summary
+from release_summarizer.llm import parse_summary, clean_notes, notes_context
 from release_summarizer.db import store, cleanup, conn as db
 
 assert all(TAG.match(t) for t in ["v1.2.3", "4.22.17", "v1.106.0-rc.2", "v3.13.0rc0", "v0.10.1rc1"])
@@ -16,6 +16,13 @@ assert vkey("4.22.9") < vkey("4.22.17")  # sayısal, alfabetik değil
 
 assert parse_summary('<think>hmm {x}</think>```json\n{"tldr": "ok", "urgency": "low"}\n```') == {"tldr": "ok", "urgency": "low"}
 assert parse_summary("düz metin") == {"tldr": "düz metin"}
+
+body = "## Verify\ncosign...\n## What's Changed\n* feat: wav desteği by @ali in https://github.com/x/pull/1\n\n## New Contributors\n* @ali\n"
+assert clean_notes(body) == "## What's Changed\n* feat: wav desteği"
+nr = lambda t, b="x": {"tag": t, "published": "2026-01-01", "body": b}
+text, n, cut = notes_context([nr("v1.99.0"), nr("v1.98.0"), nr("v1.97.1"), nr("v1.100.0-rc.1"), nr("v1.99.0-rc.1"), nr("v1.100.0-dev.1")], "1.98.0")
+assert (n, cut) == (2, False) and text.index("v1.99.0 ") < text.index("v1.100.0-rc.1")  # eskiden yeniye; eski rc/dev yok
+assert notes_context([nr("v1.0.0", "a" * 100), nr("v1.1.0", "b" * 100)], budget=100)[2]  # bütçe aşılınca kırpılır
 
 txt = ("intro\nName:           4.22.17\nCreated:        2026-10-01T19:50:27Z\n\nRelease Metadata:\n"
        "  Version:  4.22.17\n  Upgrades: 4.21.36, 4.22.9, 4.22.16, 4.22.15\n  Metadata:\n"

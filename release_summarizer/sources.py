@@ -6,20 +6,28 @@ from .config import GITHUB_TOKEN, KEEP_STABLE
 from .versions import TAG, vkey
 
 
-async def fetch(c, product):
-    return await (fetch_github(c, product["repo"]) if "repo" in product else fetch_ocp(c, product["ocp"]))
+async def fetch(c, product, since=None):
+    return await (fetch_github(c, product["repo"], since) if "repo" in product else fetch_ocp(c, product["ocp"]))
 
 
-async def fetch_github(c, repo):
+async def fetch_github(c, repo, since=None, max_pages=10):
+    """Son 100 release; since (ör. "1.98") verilirse o sürüme inene kadar sayfalar."""
     headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
-    r = await c.get(f"https://api.github.com/repos/{repo}/releases", params={"per_page": 50}, headers=headers)
-    r.raise_for_status()
-    return [
-        {"tag": x["tag_name"], "title": x["name"] or x["tag_name"], "url": x["html_url"],
-         "published": x["published_at"], "body": x["body"] or ""}
-        for x in r.json()
-        if not x["draft"]
-    ]
+    out = []
+    for page in range(1, (max_pages if since else 1) + 1):
+        r = await c.get(f"https://api.github.com/repos/{repo}/releases", params={"per_page": 100, "page": page},
+                        headers=headers)
+        r.raise_for_status()
+        batch = [
+            {"tag": x["tag_name"], "title": x["name"] or x["tag_name"], "url": x["html_url"],
+             "published": x["published_at"], "body": x["body"] or ""}
+            for x in r.json()
+            if not x["draft"]
+        ]
+        out += batch
+        if len(r.json()) < 100 or any(TAG.match(x["tag"]) and vkey(x["tag"]) <= vkey(since) for x in batch):
+            break
+    return out
 
 
 def parse_ocp(text, source):

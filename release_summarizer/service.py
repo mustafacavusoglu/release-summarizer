@@ -1,5 +1,6 @@
 """İş akışı: kaynakları çek → kaydet → temizle → özetle; cron zamanlayıcı."""
 import asyncio
+import time
 from datetime import datetime
 
 import httpx
@@ -53,6 +54,17 @@ async def resummarize(pid, tag):
         return None
     async with httpx.AsyncClient() as c:
         return await summarize_release(c, row)
+
+
+_notes = {}  # (ürün, since) -> (zaman, release'ler): her soruda GitHub'a gitmemek için
+
+
+async def chat(pid, messages, since=None):
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as c:
+        hit = _notes.get((pid, since))
+        if not hit or time.monotonic() - hit[0] > 3600:  # ponytail: 1 saatlik bellek cache'i, sınırsız anahtar; az ürün/sürüm için yeter
+            hit = _notes[pid, since] = (time.monotonic(), await sources.fetch(c, PRODUCTS[pid], since))
+        return await llm.chat(c, PRODUCTS[pid]["name"], hit[1], messages, since)
 
 
 async def scheduler():
